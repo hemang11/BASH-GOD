@@ -78,20 +78,33 @@ _god_style_init() {
   _GOD_ACCENT=''
   _GOD_COMMAND=''
   _GOD_WARNING=''
+  _GOD_ART_ROW_1=''
+  _GOD_ART_ROW_2=''
+  _GOD_ART_ROW_3=''
+  _GOD_ART_ROW_4=''
+  _GOD_ART_ROW_5=''
+  _GOD_ART_ROW_6=''
 
-  if [ "$color_mode" = "always" ] || {
-    [ "$color_mode" != "never" ] &&
-    [ -z "${NO_COLOR+x}" ] &&
-    [ "${TERM:-}" != "dumb" ] &&
-    [ -t "$output_fd" ]
-  }; then
-    _GOD_RESET="$(printf '\033[0m')"
-    _GOD_BOLD="$(printf '\033[1m')"
-    _GOD_DIM="$(printf '\033[2m')"
-    _GOD_BRAND="$(printf '\033[1;35m')"
-    _GOD_ACCENT="$(printf '\033[1;36m')"
-    _GOD_COMMAND="$(printf '\033[32m')"
-    _GOD_WARNING="$(printf '\033[1;33m')"
+  if [ -z "${NO_COLOR+x}" ]; then
+    if [ "$color_mode" = "always" ] || {
+      [ "$color_mode" != "never" ] &&
+      [ "${TERM:-}" != "dumb" ] &&
+      [ -t "$output_fd" ]
+    }; then
+      _GOD_RESET="$(printf '\033[0m')"
+      _GOD_BOLD="$(printf '\033[1m')"
+      _GOD_DIM="$(printf '\033[2m')"
+      _GOD_BRAND="$(printf '\033[1;35m')"
+      _GOD_ACCENT="$(printf '\033[1;36m')"
+      _GOD_COMMAND="$(printf '\033[32m')"
+      _GOD_WARNING="$(printf '\033[1;33m')"
+      _GOD_ART_ROW_1="$(printf '\033[1;38;5;51m')"
+      _GOD_ART_ROW_2="$(printf '\033[1;38;5;45m')"
+      _GOD_ART_ROW_3="$(printf '\033[1;38;5;39m')"
+      _GOD_ART_ROW_4="$(printf '\033[1;38;5;33m')"
+      _GOD_ART_ROW_5="$(printf '\033[1;38;5;27m')"
+      _GOD_ART_ROW_6="$(printf '\033[1;38;5;21m')"
+    fi
   fi
 }
 
@@ -161,12 +174,26 @@ _god_print_unknown_group() {
 }
 
 god() {
-  local first first_lower catalog service second second_lower group third third_lower tree_full
+  local first first_lower catalog service second second_lower group third third_lower tree_full argument
+  local -a god_arguments
+  local _GOD_QUIET
+
+  _GOD_QUIET="${_GOD_QUIET:-0}"
+  god_arguments=()
+  for argument in "$@"; do
+    if [ "$(_god_lower "$argument")" = "--quiet" ]; then
+      _GOD_QUIET=1
+    else
+      god_arguments+=("$argument")
+    fi
+  done
+  set -- "${god_arguments[@]}"
 
   _god_style_init || return $?
   _god_validate_all_catalogs || return $?
 
   if [ "$#" -eq 0 ]; then
+    _god_print_home_art
     _god_print_root_help
     return $?
   fi

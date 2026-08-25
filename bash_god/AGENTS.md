@@ -71,6 +71,8 @@ god <service> <group> --tree --full   titles plus every native command line
 god --keys                            root navigation vocabulary
 god <service> --keys                  service-context navigation vocabulary
 god <service> <group> --keys          group-context navigation vocabulary
+god --quiet                           root dashboard without decorative artwork
+god <service> --quiet                 global option accepted at any route position
 god q <terms>                         forgiving, relevance-ranked lookup
 god -q <terms>                        same smart lookup
 god <service> q <terms>               search only one service
@@ -90,10 +92,25 @@ so it always follows that key. `<number>` is the only contextual selector: it re
 numbered rows are visible. It is generated from record order, is not a permanent command identifier,
 and never belongs in a `.god` record. Search results resolve to the current row number.
 
+`--quiet` is an exact global option: the dispatcher removes it wherever it appears and suppresses
+decorative home artwork without changing the requested data view. Do not reuse `-q` for quiet mode;
+`q` and `-q` remain the semantic-search routes.
+
 Smart search is case-insensitive. It removes conversational filler, normalizes common plurals,
 tolerates prefix-related variants, retains records with the best query-word coverage, and then ranks
 title, route, and body matches. Search candidates are always command records even when the matching
 text came from a description, parameter, optional flag, or note.
+
+## Terminal Identity Contract
+
+- Store the six-line BASH GOD logo as pre-rendered text in `art.sh`; do not invoke `figlet`, `toilet`,
+  or another generator at runtime.
+- Render the logo only for a bare `god` invocation when stdout is a TTY.
+- Keep `god help`, scoped commands, redirects, pipes, and error output free of the logo.
+- Honor the exact global `--quiet` option at every route position.
+- Treat `NO_COLOR` as authoritative: when it is present, emit no ANSI sequences even if
+  `GOD_COLOR=always`. On a TTY, this leaves the uncolored logo unless `--quiet` is also present.
+- Keep sourcing silent. Loading `BASH_GOD.sh` or `art.sh` must never print the logo or other output.
 
 ## Choose the Correct Catalog and Group
 
@@ -360,6 +377,7 @@ From the repository root, preview the affected paths:
 
 ```text
 GOD_COLOR=never ./god <service>
+GOD_COLOR=never ./god --quiet
 GOD_COLOR=never ./god --details
 GOD_COLOR=never ./god <service> --details
 GOD_COLOR=never ./god <service> <group>
@@ -396,6 +414,10 @@ complete a catalog edit.
 Confirm all of the following:
 
 - sourcing `BASH_GOD.sh` remains silent;
+- the pre-rendered logo appears only for bare `god` on a TTY;
+- `god help`, scoped routes, redirects, pipes, errors, and `--quiet` remain logo-free;
+- `NO_COLOR` emits no ANSI sequences even with `GOD_COLOR=always`, while preserving plain TTY art;
+- `-q` still routes to search and is never interpreted as quiet mode;
 - the new record appears in the expected group;
 - the compact view shows one physical command line;
 - `<number>`, `--help`, `--details`, `--tree`, `--tree --full`, and `--keys` show the expected knowledge
@@ -411,7 +433,7 @@ Changing the catalog grammar or navigation model is a framework change, not a no
 addition. When such a change is genuinely required, update these together:
 
 1. initialization/dispatch in `bash_god/core.sh`, discovery/validation in `bash_god/catalog.sh`,
-   root-only artwork in `bash_god/art.sh`, normal views in `bash_god/render.sh`, search in
+   bare-TTY artwork in `bash_god/art.sh`, normal views in `bash_god/render.sh`, search in
    `bash_god/search.sh`, or hierarchy rendering in `bash_god/tree.sh`, according to ownership;
 2. smoke coverage in `bash_god/tests/smoke.sh`;
 3. `bash_god/docs/architecture/bash-god-knowledge-base-architecture.md`;
@@ -423,7 +445,8 @@ Do not special-case one service in the dispatcher when the behavior can remain d
 
 The current validator rejects malformed catalogs before rendering them. The smoke suite verifies
 that catalogs remain inert, sourcing is silent, navigation is case-insensitive, default trees are
-compact, full trees display inert native command lines, and Bash and zsh can load the toolkit.
+compact, full trees display inert native command lines, the logo respects TTY and quiet/color
+contracts, and Bash and zsh can load the toolkit.
 
 Current limitations:
 

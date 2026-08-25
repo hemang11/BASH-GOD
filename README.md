@@ -41,6 +41,11 @@ Sourcing is silent. BASH_GOD does not edit `.bashrc`, `.bash_profile`, or `.zshr
 source "/absolute/path/to/BASH-GOD/BASH_GOD.sh"
 ```
 
+On an interactive terminal, the bare `god` dashboard opens with a pre-rendered six-line BASH GOD
+logo. It is stored in the toolkit—`figlet`, `toilet`, and other banner generators are not runtime
+dependencies. The logo is omitted from `god help`, every scoped command, redirected or piped output,
+and errors. Add the exact global `--quiet` option anywhere in a route to suppress it explicitly.
+
 You can also use the executable without sourcing:
 
 ```bash
@@ -52,6 +57,7 @@ You can also use the executable without sourcing:
 
 ```bash
 god                                  # Show available services
+god --quiet                          # Show the dashboard without its logo
 god kafka offset                     # Kafka offset and consumer-lag commands
 god mongo service                    # MongoDB process and service checks
 god k8s describe                     # Kubernetes describe commands
@@ -76,6 +82,7 @@ Service and group names must match exactly, but matching is case-insensitive: `g
 | `--tree --full` | Hierarchy including native command lines |
 | `--keys` | Navigation keys available at the current scope |
 | `q` or `-q` | Smart search globally or inside a service/group |
+| `--quiet` | Suppress decorative home artwork; accepted anywhere |
 
 Examples:
 
@@ -93,6 +100,10 @@ god --version
 
 View keys work at every meaningful scope. For example, `god --tree`, `god mongo --tree`, and `god mongo replica --tree --full` widen the same view. Row numbers are contextual positions in the currently displayed group; they can change when catalog records are reordered and are not permanent command IDs.
 
+`--quiet` is deliberately distinct from search: only the full token `--quiet` changes decoration;
+`-q` continues to mean query. Set `NO_COLOR` to disable ANSI color authoritatively, including when
+`GOD_COLOR=always`; the plain logo still appears for a bare `god` on a TTY unless `--quiet` is used.
+
 ## How It Works
 
 ```text
@@ -101,7 +112,7 @@ god                          direct executable
 bash_god/
   core.sh                    routing and initialization
   catalog.sh                 catalog discovery and validation
-  art.sh                     root-only ASCII identity
+  art.sh                     pre-rendered, bare-TTY-only identity
   render.sh                  normal terminal views
   search.sh                  ranked text and regex search
   tree.sh                    hierarchy views
@@ -190,7 +201,10 @@ If `shellcheck` is already installed, it is also useful. BASH_GOD does not requi
 - **Unknown service or group:** run `god` or `god <service>` and use the displayed exact route; capitalization does not matter.
 - **Search is too narrow:** try `god q --any <words>` or `god q --regex '<pattern>'`.
 - **A native command fails:** open the service's `native` group and check the installed tool's help. BASH_GOD displays commands but does not test them against your environment.
-- **Unwanted terminal color:** prefix a command with `GOD_COLOR=never`.
+- **Unwanted terminal color:** prefix a command with `GOD_COLOR=never`, or set `NO_COLOR`. When
+  `NO_COLOR` is present it wins even over `GOD_COLOR=always`.
+- **Unwanted home logo:** add `--quiet` anywhere, such as `god --quiet`. Redirects and pipes suppress
+  it automatically.
 - **Catalog validation fails:** compare the record with [the contribution guide](bash_god/AGENTS.md), especially required fields and the one-line `@run` rule.
 
 ## Limitations / Risks

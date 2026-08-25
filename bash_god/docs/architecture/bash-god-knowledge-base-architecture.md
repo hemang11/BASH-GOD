@@ -38,7 +38,7 @@ records live inside that file. There is no file per command or group.
 
 The UI uses progressive disclosure:
 
-1. `god` shows platforms and discovery shortcuts.
+1. Bare `god` shows a terminal-only identity followed by platforms and discovery shortcuts.
 2. `god kafka` shows a short group map with counts and one operation preview.
 3. `god kafka consume` shows a numbered index of one-line commands.
 4. `--details` expands every command below the current root, service, or group scope.
@@ -114,7 +114,8 @@ bash_god/
 - `god` is an executable wrapper for direct use and testing.
 - `core.sh` owns initialization, shared styling primitives, module loading, and routing.
 - `catalog.sh` owns catalog discovery, service-route resolution, and grammar validation.
-- `art.sh` owns the root-only ASCII identity; sourcing it is silent and scoped views never render it.
+- `art.sh` owns the pre-rendered six-line identity and its TTY gate; sourcing it is silent and only
+  bare `god` may render it.
 - `render.sh` owns normal root, service, group, and command views.
 - `search.sh` owns query parsing, matching, ranking, list/tree/detail search views, and search help.
 - `tree.sh` owns root, service, and group hierarchy rendering.
@@ -176,8 +177,10 @@ directory becomes the exact case-insensitive service route.
 
 ### Root and service index
 
-`god`, `god help`, and `god --help` show the left-aligned ASCII identity, platforms, command counts,
-and quick-start routes. Navigation vocabulary remains available separately through `god --keys`.
+Bare `god` on a TTY shows the pre-rendered six-line BASH GOD logo, then platforms, command counts,
+and quick-start routes. `god help` and `god --help` show the same useful dashboard content without the
+logo. Redirected or piped stdout also omits it, so logs and automation receive only functional text.
+Navigation vocabulary remains available separately through `god --keys`.
 
 `god kafka`, `god kafka help`, and `god kafka --help` are equivalent. They show each group route, its command count, the first operation title, and a `+N more` hint. This keeps the service map within one screen.
 
@@ -279,7 +282,9 @@ Service and group names require exact matches but ignore case, so `god KAFKA OFF
 `god --keys`, `god kafka --keys`, and `god kafka offset --keys` show the same navigation vocabulary
 with examples for the current scope. The routing invariant is that `--help`, `--tree`, `--details`,
 `--keys`, and `q`/`-q` resolve at root, service, group, and search scopes wherever meaningful.
-`--full` always modifies `--tree`; `<number>` always requires numbered group rows. `god --version`
+`--quiet` is an exact global option accepted anywhere and suppresses decorative home artwork without
+changing the selected view; `-q` remains the query route. `--full` always modifies `--tree`;
+`<number>` always requires numbered group rows. `god --version`
 and root-level `god -v` print only
 `BASH_GOD 0.0.1.1` and `License: MIT`; they do not report the host shell version.
 
@@ -289,13 +294,20 @@ and root-level `god -v` print only
 
 ## Visual Design
 
+- The six-line BASH GOD logo is pre-rendered in `art.sh`; BASH_GOD never shells out to `figlet`,
+  `toilet`, or another banner generator.
+- Only bare `god` on a TTY renders the logo and slogan. `god help`, scoped routes, redirected or piped
+  output, and errors never do. The global exact `--quiet` option suppresses it explicitly.
 - Magenta framed banners identify normal views; tree mode uses a compact branch heading to save rows.
 - Cyan routes and bullets show navigation.
 - Green `$` lines identify commands to copy.
 - Yellow `WRITE`, `WARN`, and `DELETE` markers identify state-changing or high-impact entries.
 - Dim text carries descriptions and secondary guidance.
 
-Color is automatic only on a terminal. `NO_COLOR` disables automatic color; `GOD_COLOR=always|never|auto` controls it explicitly, with `always` taking precedence. UTF-8 locales use box drawing and bullets; other locales fall back to ASCII.
+Color is automatic only on a terminal. `GOD_COLOR=always|never|auto` controls the normal policy, but
+`NO_COLOR` is authoritative and disables ANSI even when `GOD_COLOR=always`. It does not suppress the
+plain logo on a TTY; `--quiet` controls decoration. UTF-8 locales use box drawing and bullets; other
+locales fall back to ASCII for normal views.
 
 ## Extensibility
 
@@ -335,9 +347,10 @@ After validation, root help, `god mongo`, tree, and search discover it automatic
 - Success, no-match, and invalid-input exit codes.
 - Silent sourcing in Bash and zsh.
 - Catalog validation and inert handling of command text.
-- Automatic color, `NO_COLOR`, forced color modes, and ASCII fallback.
+- Automatic color, authoritative `NO_COLOR`, forced color modes, and ASCII fallback for normal views.
 - Copy-ready wrapping without invoking Kafka or another native tool.
-- Root-only artwork, exact slogan rendering, and art-free service/search views.
+- Pre-rendered artwork only for bare TTY `god`, exact slogan rendering, global `--quiet`, and
+  logo-free help, scoped, redirected, piped, and error views.
 
 ## Limitations / Risks
 
@@ -349,5 +362,7 @@ After validation, root help, `god mongo`, tree, and search discover it automatic
 - Smart search is a local ranked word matcher, not an embedding model or full natural-language engine;
   prefixes and simple plural normalization can still produce false positives or miss distant synonyms.
 - Renderers use fixed widths rather than detecting terminal width.
+- The pre-rendered logo uses Unicode block characters; `--quiet` provides a decoration-free view for
+  terminals where those glyphs are undesirable.
 - BASH_GOD neither substitutes placeholders nor validates copied commands.
 - Warnings cannot prevent an operator from running a risky command.

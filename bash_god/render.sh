@@ -29,6 +29,7 @@ _god_print_view_key_rows() {
   printf '  %s%-15s%s %sShow the compact hierarchy%s\n' "$_GOD_ACCENT" '--tree' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
   printf '  %s%-15s%s %sInclude every title and native command line%s\n' "$_GOD_ACCENT" '--tree --full' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
   printf '  %s%-15s%s %sSmart search; use --any, --all, --exact, or --regex%s\n' "$_GOD_ACCENT" 'q | -q' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+  printf '  %s%-15s%s %sHide decorative home artwork; accepted everywhere%s\n' "$_GOD_ACCENT" '--quiet' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
 }
 
 _god_print_view_keys() {
@@ -63,9 +64,7 @@ _god_print_view_keys() {
 }
 
 _god_print_root_help() {
-  _god_print_home_art
-
-  printf '\n%sSERVICES%s\n' "$_GOD_BOLD" "$_GOD_RESET"
+  printf '%sSERVICES%s\n' "$_GOD_BOLD" "$_GOD_RESET"
   printf '%s  %-16s %8s   %s%s\n' "$_GOD_DIM" 'SERVICE' 'COMMANDS' 'OPEN' "$_GOD_RESET"
   printf '%s  %-16s %8s   %s%s\n' "$_GOD_DIM" '----------------' '--------' '------------------------' "$_GOD_RESET"
   _god_print_available_services || return $?

@@ -102,20 +102,32 @@ health_unavailable_label="$(printf '%02d' "$health_unavailable_number")"
 
 output="$(GOD_COLOR=never "$god_cli")"
 home_slogan='Your DevOps command memory. Native commands, zero execution.'
+logo_first='██████╗  █████╗ ███████╗██╗  ██╗    ██████╗  ██████╗ ██████╗'
+logo_last='╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝    ╚═════╝  ╚═════╝ ╚═════╝'
 services_table_start="$(printf 'SERVICES\n  SERVICE')"
 quick_start_first_row="$(printf 'QUICK START\n  god kafka')"
 view_keys_first_row="$(printf 'VIEW KEYS\n  <number>')"
-if contains "$output" 'BASH_GOD' && contains "$output" "$home_slogan" && contains "$output" '.-============-.' && contains "$output" '\/\/\/\/' && contains "$output" '--+--' && contains "$output" "$services_table_start" && contains "$output" "$quick_start_first_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys'; then
-  pass 'root dashboard'
+if contains "$output" "$services_table_start" && contains "$output" "$quick_start_first_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_slogan"; then
+  pass 'non-interactive root dashboard stays decoration-free'
 else
-  fail 'root dashboard'
+  fail 'non-interactive root dashboard stays decoration-free'
 fi
 
 help_output="$(GOD_COLOR=never "$god_cli" help)"
 if [ "$output" = "$help_output" ]; then
-  pass 'god and god help are equivalent'
+  pass 'non-interactive god and god help are equivalent'
 else
-  fail 'god and god help are equivalent'
+  fail 'non-interactive god and god help are equivalent'
+fi
+
+interactive_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god' _ "$project_dir")"
+interactive_help_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god help' _ "$project_dir")"
+interactive_long_help_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god --help' _ "$project_dir")"
+interactive_quiet_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god --quiet' _ "$project_dir")"
+if contains "$interactive_output" "$logo_first" && contains "$interactive_output" "$logo_last" && contains "$interactive_output" "$home_slogan" && not_contains "$interactive_help_output" "$logo_first" && not_contains "$interactive_long_help_output" "$logo_first" && [ "$interactive_quiet_output" = "$help_output" ]; then
+  pass 'pre-rendered logo is limited to bare interactive god'
+else
+  fail 'pre-rendered logo is limited to bare interactive god'
 fi
 
 version_output="$(GOD_COLOR=never "$god_cli" --version)"
@@ -133,6 +145,18 @@ if [ "$service_output" = "$service_help_output" ] && contains "$service_output" 
   pass 'service map is compact and case-insensitive'
 else
   fail 'service map is compact and case-insensitive'
+fi
+
+quiet_prefix_service_output="$(GOD_COLOR=never "$god_cli" --quiet kafka)"
+quiet_suffix_service_output="$(GOD_COLOR=never "$god_cli" kafka --quiet)"
+quiet_group_output="$(GOD_COLOR=never "$god_cli" kafka offset --quiet)"
+normal_quiet_group_output="$(GOD_COLOR=never "$god_cli" kafka offset)"
+quiet_search_output="$(GOD_COLOR=never "$god_cli" kafka q lag --tree --full --quiet)"
+normal_quiet_search_output="$(GOD_COLOR=never "$god_cli" kafka q lag --tree --full)"
+if [ "$quiet_prefix_service_output" = "$service_output" ] && [ "$quiet_suffix_service_output" = "$service_output" ] && [ "$quiet_group_output" = "$normal_quiet_group_output" ] && [ "$quiet_search_output" = "$normal_quiet_search_output" ]; then
+  pass 'global --quiet is accepted at root, service, group, and search scopes'
+else
+  fail 'global --quiet is accepted at root, service, group, and search scopes'
 fi
 
 group_output="$(GOD_COLOR=never "$god_cli" kafka consume)"
@@ -379,7 +403,8 @@ else
 fi
 
 plain_output="$(GOD_COLOR=never "$god_cli" kafka offset)"
-color_output="$(GOD_COLOR=always "$god_cli" kafka offset)"
+color_output="$(unset NO_COLOR; GOD_COLOR=always "$god_cli" kafka offset)"
+no_color_output="$(NO_COLOR=1 GOD_COLOR=always "$god_cli" kafka offset)"
 escape_character="$(printf '\033')"
 case "$plain_output" in
   *"$escape_character"*) plain_has_color=1 ;;
@@ -389,10 +414,24 @@ case "$color_output" in
   *"$escape_character"*) color_has_color=1 ;;
   *) color_has_color=0 ;;
 esac
-if [ "$plain_has_color" -eq 0 ] && [ "$color_has_color" -eq 1 ]; then
-  pass 'color can be disabled or forced'
+case "$no_color_output" in
+  *"$escape_character"*) no_color_has_color=1 ;;
+  *) no_color_has_color=0 ;;
+esac
+if [ "$plain_has_color" -eq 0 ] && [ "$color_has_color" -eq 1 ] && [ "$no_color_has_color" -eq 0 ]; then
+  pass 'color can be disabled, forced, or authoritatively suppressed by NO_COLOR'
 else
-  fail 'color can be disabled or forced'
+  fail 'color can be disabled, forced, or authoritatively suppressed by NO_COLOR'
+fi
+
+color_logo_output="$(bash -c 'unset NO_COLOR; . "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=always god' _ "$project_dir")"
+plain_logo_output="$(NO_COLOR=1 bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=always god' _ "$project_dir")"
+cyan_row="$(printf '\033[1;38;5;51m')"
+blue_row="$(printf '\033[1;38;5;21m')"
+if contains "$color_logo_output" "$cyan_row$logo_first" && contains "$color_logo_output" "$blue_row$logo_last" && contains "$plain_logo_output" "$logo_first" && not_contains "$plain_logo_output" "$escape_character"; then
+  pass 'home logo uses one cyan-to-blue gradient with a plain NO_COLOR form'
+else
+  fail 'home logo uses one cyan-to-blue gradient with a plain NO_COLOR form'
 fi
 
 ascii_output="$(LC_ALL=C GOD_COLOR=never "$god_cli" kafka offset)"
