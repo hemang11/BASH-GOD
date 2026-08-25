@@ -116,13 +116,15 @@ text came from a description, parameter, optional flag, or note.
 
 Before adding anything, decide where the knowledge belongs:
 
-- Put platform-specific knowledge in that platform's catalog: Kafka in `catalog/kafka/service.god`,
-  MongoDB in `catalog/mongo/service.god`, Kubernetes in `catalog/k8s/service.god`, and Elasticsearch
-  in `catalog/elasticsearch/service.god`.
+- Put platform-specific knowledge in that platform's catalog: AWS in `catalog/aws/service.god`, Kafka
+  in `catalog/kafka/service.god`, MongoDB in `catalog/mongo/service.god`, Kubernetes in
+  `catalog/k8s/service.god`, and Elasticsearch in `catalog/elasticsearch/service.god`.
 - Put service-independent host, process, filesystem, and hardware-resource knowledge in
   `catalog/general/service.god`.
-- Put interfaces, ports, DNS, connectivity, HTTP, SSH, and Route 53 lookup knowledge in
+- Put generic interfaces, ports, DNS resolvers, connectivity, HTTP, and SSH knowledge in
   `catalog/network/service.god`; do not dilute `general` with networking commands.
+- Put AWS identity, Route 53, and future AWS-service knowledge in `catalog/aws/service.god`. Route 53
+  is an AWS service even though its records participate in DNS; do not place it under `network`.
 - Reuse an existing group when the new command answers the same kind of question.
 - Add a new group only when it creates a useful distinction on `god <service>`.
 - Keep group names short, lowercase, and memorable, for example `offset`, `topics`, `health`, or

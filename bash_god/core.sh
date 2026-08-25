@@ -98,12 +98,12 @@ _god_style_init() {
       _GOD_ACCENT="$(printf '\033[1;36m')"
       _GOD_COMMAND="$(printf '\033[32m')"
       _GOD_WARNING="$(printf '\033[1;33m')"
-      _GOD_ART_ROW_1="$(printf '\033[1;38;5;51m')"
-      _GOD_ART_ROW_2="$(printf '\033[1;38;5;45m')"
-      _GOD_ART_ROW_3="$(printf '\033[1;38;5;39m')"
-      _GOD_ART_ROW_4="$(printf '\033[1;38;5;33m')"
-      _GOD_ART_ROW_5="$(printf '\033[1;38;5;27m')"
-      _GOD_ART_ROW_6="$(printf '\033[1;38;5;21m')"
+      _GOD_ART_ROW_1="$(printf '\033[1;38;5;255m')"
+      _GOD_ART_ROW_2="$(printf '\033[1;38;5;230m')"
+      _GOD_ART_ROW_3="$(printf '\033[1;38;5;229m')"
+      _GOD_ART_ROW_4="$(printf '\033[1;38;5;228m')"
+      _GOD_ART_ROW_5="$(printf '\033[1;38;5;227m')"
+      _GOD_ART_ROW_6="$(printf '\033[1;38;5;220m')"
     fi
   fi
 }

@@ -22,7 +22,7 @@ BASH_GOD is intentionally:
 - explicit about commands that write, warn, or delete;
 - a bridge back to native help through each service's `native` group.
 
-It is not a replacement for Kafka, MongoDB, Kubernetes, Elasticsearch, networking, or operating-system tools. It does not run commands, store credentials, auto-configure your shell, or guarantee that a native command matches every installed version.
+It is not a replacement for AWS, Kafka, MongoDB, Kubernetes, Elasticsearch, networking, or operating-system tools. It does not run commands, store credentials, auto-configure your shell, or guarantee that a native command matches every installed version.
 
 ## Install
 
@@ -58,6 +58,7 @@ You can also use the executable without sourcing:
 ```bash
 god                                  # Show available services
 god --quiet                          # Show the dashboard without its logo
+god aws route53                      # Read-only Route 53 discovery commands
 god kafka offset                     # Kafka offset and consumer-lag commands
 god mongo service                    # MongoDB process and service checks
 god k8s describe                     # Kubernetes describe commands

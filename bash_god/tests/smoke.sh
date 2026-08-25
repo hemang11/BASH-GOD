@@ -6,6 +6,7 @@ test_file="${BASH_SOURCE[0]}"
 test_dir="$(CDPATH= cd "$(dirname "$test_file")" 2>/dev/null && pwd -P)" || exit 1
 project_dir="$(CDPATH= cd "$test_dir/../.." 2>/dev/null && pwd -P)" || exit 1
 god_cli="$project_dir/god"
+aws_catalog="$project_dir/bash_god/catalog/aws/service.god"
 kafka_catalog="$project_dir/bash_god/catalog/kafka/service.god"
 general_catalog="$project_dir/bash_god/catalog/general/service.god"
 elasticsearch_catalog="$project_dir/bash_god/catalog/elasticsearch/service.god"
@@ -107,7 +108,7 @@ logo_last='╚═════╝ ╚═╝  ╚═╝╚══════╝╚
 services_table_start="$(printf 'SERVICES\n  SERVICE')"
 quick_start_first_row="$(printf 'QUICK START\n  god kafka')"
 view_keys_first_row="$(printf 'VIEW KEYS\n  <number>')"
-if contains "$output" "$services_table_start" && contains "$output" "$quick_start_first_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_slogan"; then
+if contains "$output" "$services_table_start" && contains "$output" 'god aws' && contains "$output" "$quick_start_first_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_slogan"; then
   pass 'non-interactive root dashboard stays decoration-free'
 else
   fail 'non-interactive root dashboard stays decoration-free'
@@ -426,12 +427,12 @@ fi
 
 color_logo_output="$(bash -c 'unset NO_COLOR; . "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=always god' _ "$project_dir")"
 plain_logo_output="$(NO_COLOR=1 bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=always god' _ "$project_dir")"
-cyan_row="$(printf '\033[1;38;5;51m')"
-blue_row="$(printf '\033[1;38;5;21m')"
-if contains "$color_logo_output" "$cyan_row$logo_first" && contains "$color_logo_output" "$blue_row$logo_last" && contains "$plain_logo_output" "$logo_first" && not_contains "$plain_logo_output" "$escape_character"; then
-  pass 'home logo uses one cyan-to-blue gradient with a plain NO_COLOR form'
+ivory_row="$(printf '\033[1;38;5;255m')"
+gold_row="$(printf '\033[1;38;5;220m')"
+if contains "$color_logo_output" "$ivory_row$logo_first" && contains "$color_logo_output" "$gold_row$logo_last" && contains "$plain_logo_output" "$logo_first" && not_contains "$plain_logo_output" "$escape_character"; then
+  pass 'home logo uses one ivory-to-gold gradient with a plain NO_COLOR form'
 else
-  fail 'home logo uses one cyan-to-blue gradient with a plain NO_COLOR form'
+  fail 'home logo uses one ivory-to-gold gradient with a plain NO_COLOR form'
 fi
 
 ascii_output="$(LC_ALL=C GOD_COLOR=never "$god_cli" kafka offset)"
@@ -479,12 +480,19 @@ else
 fi
 
 network_ports_output="$(GOD_COLOR=never "$god_cli" network ports)"
-network_route53_output="$(GOD_COLOR=never "$god_cli" network route53)"
+network_dns_output="$(GOD_COLOR=never "$god_cli" network dns)"
+network_help_output="$(GOD_COLOR=never "$god_cli" network)"
 network_search_output="$(GOD_COLOR=never "$god_cli" network q 'check listening port')"
-if contains "$network_ports_output" '$ ss -tulnp' && contains "$network_ports_output" 'lsof -nP -iTCP:<port_number>' && contains "$network_route53_output" 'list-hosted-zones' && contains "$network_route53_output" 'list-resource-record-sets' && not_contains "$network_route53_output" 'change-resource-record-sets' && contains "$network_search_output" 'Check which Linux process is listening on one TCP port'; then
-  pass 'network catalog separates port discovery and read-only Route 53 knowledge'
+aws_identity_output="$(GOD_COLOR=never "$god_cli" aws identity)"
+aws_route53_output="$(GOD_COLOR=never "$god_cli" aws route53)"
+aws_native_output="$(GOD_COLOR=never "$god_cli" aws native)"
+aws_search_output="$(GOD_COLOR=never "$god_cli" q 'private hosted zones')"
+network_route53_status=0
+GOD_COLOR=never "$god_cli" network route53 >/dev/null 2>&1 || network_route53_status=$?
+if contains "$network_ports_output" '$ ss -tulnp' && contains "$network_ports_output" 'lsof -nP -iTCP:<port_number>' && contains "$network_dns_output" '$ dig +short <hostname> A' && not_contains "$network_help_output" 'route53' && [ "$network_route53_status" -eq 2 ] && contains "$network_search_output" 'Check which Linux process is listening on one TCP port' && contains "$aws_identity_output" '$ aws sts get-caller-identity' && contains "$aws_route53_output" 'list-hosted-zones' && contains "$aws_route53_output" 'list-resource-record-sets' && not_contains "$aws_route53_output" 'change-resource-record-sets' && contains "$aws_native_output" '$ aws route53 help' && contains "$aws_search_output" 'god aws route53'; then
+  pass 'AWS owns Route 53 knowledge while network keeps generic DNS and ports'
 else
-  fail 'network catalog separates port discovery and read-only Route 53 knowledge'
+  fail 'AWS owns Route 53 knowledge while network keeps generic DNS and ports'
 fi
 
 elasticsearch_service_output="$(GOD_COLOR=never "$god_cli" elasticsearch service)"
@@ -496,7 +504,7 @@ else
   fail 'Elasticsearch catalog covers service, shard, and bounded search inspection'
 fi
 
-if [ -f "$kafka_catalog" ] && [ -f "$general_catalog" ] && [ -f "$elasticsearch_catalog" ] && [ -f "$k8s_catalog" ] && [ -f "$mongo_catalog" ] && [ -f "$network_catalog" ] && [ ! -e "$project_dir/bash_god/catalog/kafka.god" ] && [ ! -e "$project_dir/bash_god/catalog/general.god" ]; then
+if [ -f "$aws_catalog" ] && [ -f "$kafka_catalog" ] && [ -f "$general_catalog" ] && [ -f "$elasticsearch_catalog" ] && [ -f "$k8s_catalog" ] && [ -f "$mongo_catalog" ] && [ -f "$network_catalog" ] && [ ! -e "$project_dir/bash_god/catalog/kafka.god" ] && [ ! -e "$project_dir/bash_god/catalog/general.god" ]; then
   pass 'each service owns catalog SERVICE/service.god'
 else
   fail 'each service owns catalog SERVICE/service.god'

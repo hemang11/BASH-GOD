@@ -88,6 +88,8 @@ bash_god/
   search.sh
   tree.sh
   catalog/
+    aws/
+      service.god
     general/
       service.god
     elasticsearch/
@@ -120,13 +122,14 @@ bash_god/
 - `search.sh` owns query parsing, matching, ranking, list/tree/detail search views, and search help.
 - `tree.sh` owns root, service, and group hierarchy rendering.
 - `catalog/general/service.god` holds host, operating-system, process, file, and resource knowledge.
-- `catalog/network/service.god` holds interfaces, ports, DNS, connectivity, HTTP, SSH, and read-only
-  Route 53 knowledge.
+- `catalog/network/service.god` holds vendor-neutral interfaces, ports, DNS resolvers, connectivity,
+  HTTP, and SSH knowledge.
+- `catalog/aws/service.god` holds AWS identity and read-only Route 53 inventory knowledge.
 - Elasticsearch, Kubernetes, Kafka, and MongoDB each own the matching service catalog directory.
 - `tests/smoke.sh` verifies that BASH_GOD only shows catalog knowledge in Bash and zsh.
 - Existing aliases and functions remain in `BASH_GOD.sh`; the knowledge layer does not reinterpret them.
 
-Current service routes are `elasticsearch`, `general`, `k8s`, `kafka`, `mongo`, and `network`.
+Current service routes are `aws`, `elasticsearch`, `general`, `k8s`, `kafka`, `mongo`, and `network`.
 Compatibility modes remain searchable metadata; only older ZooKeeper-era Kafka syntax receives a
 visible `[LEGACY]` badge.
 
