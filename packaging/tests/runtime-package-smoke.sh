@@ -70,6 +70,17 @@ fi
 
 _bash_god_package_archive="$_bash_god_package_output/bash-god-0.0.1.1.tar.gz"
 _bash_god_package_checksum="$_bash_god_package_archive.sha256"
+_bash_god_package_installer="$_bash_god_package_output/install-runtime.sh"
+_bash_god_package_installer_checksum="$_bash_god_package_installer.sha256"
+_bash_god_package_installer_hash="$(_bash_god_package_sha256 "$_bash_god_package_installer")"
+if [ -x "$_bash_god_package_installer" ] && [ ! -L "$_bash_god_package_installer" ] && \
+   cmp -s "$_bash_god_package_installer" "$_bash_god_package_root/packaging/install-runtime.sh" && \
+   [ "$(command cat "$_bash_god_package_installer_checksum")" = "$_bash_god_package_installer_hash  install-runtime.sh" ]; then
+  _bash_god_package_pass 'builder emits a checksum-verifiable installer asset'
+else
+  _bash_god_package_fail 'builder emits a checksum-verifiable installer asset'
+fi
+
 _bash_god_package_listing="$(tar -tzf "$_bash_god_package_archive" 2>/dev/null)"
 if [ -f "$_bash_god_package_archive" ] && [ -f "$_bash_god_package_checksum" ] && \
    ! _bash_god_package_contains "$_bash_god_package_listing" 'BASH_GOD.sh' && \

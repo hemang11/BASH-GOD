@@ -83,7 +83,14 @@ esac
 _bash_god_install_stage="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-install.XXXXXX")" || exit 1
 _bash_god_install_new_runtime=''
 _bash_god_install_new_launcher=''
+_bash_god_install_runtime_target=''
+_bash_god_install_backup=''
 _bash_god_install_cleanup() {
+  if [ -n "$_bash_god_install_backup" ] && [ -n "$_bash_god_install_runtime_target" ] && \
+     [ -d "$_bash_god_install_backup" ] && [ ! -e "$_bash_god_install_runtime_target" ]; then
+    mv "$_bash_god_install_backup" "$_bash_god_install_runtime_target" || \
+      printf 'BASH_GOD install: recovery needed; previous runtime remains at %s\n' "$_bash_god_install_backup" >&2
+  fi
   command rm -rf -- "$_bash_god_install_stage"
   [ -z "$_bash_god_install_new_runtime" ] || command rm -rf -- "$_bash_god_install_new_runtime"
   [ -z "$_bash_god_install_new_launcher" ] || command rm -f -- "$_bash_god_install_new_launcher"
@@ -199,6 +206,7 @@ _bash_god_install_probe_first="$(printf '%s\n' "$_bash_god_install_probe" | LC_A
 _bash_god_install_bin_dir="$_bash_god_install_prefix/bin"
 _bash_god_install_lib_parent="$_bash_god_install_prefix/lib"
 _bash_god_install_runtime="$_bash_god_install_lib_parent/bash-god"
+_bash_god_install_runtime_target="$_bash_god_install_runtime"
 _bash_god_install_license_dir="$_bash_god_install_prefix/share/licenses/bash-god"
 _bash_god_install_launcher="$_bash_god_install_bin_dir/god"
 
@@ -229,7 +237,6 @@ _bash_god_install_new_launcher="$(mktemp "$_bash_god_install_bin_dir/.god.new.XX
 cp "$_bash_god_install_root/bin/god" "$_bash_god_install_new_launcher"
 chmod 0755 "$_bash_god_install_new_launcher"
 
-_bash_god_install_backup=''
 if [ -e "$_bash_god_install_runtime" ]; then
   _bash_god_install_old_version="$(GOD_COLOR=never "$_bash_god_install_runtime/god" --version 2>/dev/null | LC_ALL=C awk 'NR == 1 { print $2 }')"
   case "$_bash_god_install_old_version" in

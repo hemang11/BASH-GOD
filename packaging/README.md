@@ -1,10 +1,24 @@
 # Runtime Packaging
 
+## Context / Problem
+
 This directory builds and verifies the CLI-only BASH_GOD distribution. The package is intentionally
 smaller than the source repository and never includes personal shell aliases or the sourced
 `BASH_GOD.sh` entry point.
 
-## Layout
+## Scope
+
+This workflow supports an unprivileged, real-file installation under an absolute prefix such as
+`$HOME/.local`. It does not publish Homebrew, RPM, or APT repository metadata and does not edit shell
+startup files.
+
+## Implementation Summary
+
+The builder emits a runtime archive, a standalone installer, and a SHA-256 file for each. The
+installer snapshots and validates the supplied archive, probes the staged CLI, and activates only
+the allowlisted runtime files.
+
+## Architecture / Flow
 
 ```text
 bash-god-VERSION/
@@ -19,18 +33,19 @@ The installed `bin/god` must be a real file, not a symlink. It finds the interna
 its installation prefix, while the internal launcher retains the repository-relative module layout
 already exercised by the main smoke suite.
 
-## Build and Verify
+## Verification
 
 ```bash
 ./packaging/build-runtime.sh
 ./packaging/tests/runtime-package-smoke.sh
 ```
 
-The builder writes `dist/bash-god-VERSION.tar.gz` and a matching `.sha256` file. It refuses to
-overwrite existing files or dangling symlinks. The package smoke test builds from scratch, installs
-beneath a temporary prefix, compares the exact 16-file allowlist, checks for credential material,
-exercises navigation/search/tree views with an empty environment, rejects malformed packages and
-checksums, and verifies that replacement requires `--replace` and retains a usable previous runtime.
+The builder writes `dist/bash-god-VERSION.tar.gz`, `dist/install-runtime.sh`, and a matching `.sha256`
+file for each. It refuses to overwrite existing files or dangling symlinks. The package smoke test
+builds from scratch, verifies the installer asset, installs beneath a temporary prefix, compares the
+exact 16-file runtime allowlist, checks for credential material, exercises navigation/search/tree
+views with an empty environment, rejects malformed packages and checksums, and verifies that
+replacement requires `--replace` and retains a usable previous runtime.
 
 ## Local Installation Test
 
@@ -48,9 +63,18 @@ execute any catalog command. It refuses to replace an unrelated `bin/god` or run
 1. Confirm the version in `bash_god/core.sh` and use the matching immutable tag `vVERSION`.
 2. Run the main smoke suite and the runtime-package smoke suite.
 3. Build into a clean `dist/` directory.
-4. Publish the archive, checksum, and `install-runtime.sh` as release assets.
+4. Publish the archive, installer, and both `.sha256` files as release assets.
 5. Download the public assets and repeat an isolated-prefix install before announcing the release.
 
 The same prefix layout can later be consumed by RPM and DEB packaging without changing the runtime
 catalog or dispatcher. This first release supports direct real-file installation only; Homebrew's
 standard symlinked Cellar launcher needs separate formula work and is not supported yet.
+
+## Limitations / Risks
+
+- Checksums provide integrity for assets downloaded from the same trusted GitHub release; they are
+  not a separate code-signing identity.
+- Release archives are not reproducible byte-for-byte because tar ownership and timestamps are not
+  normalized yet.
+- An interrupted upgrade retains the previous runtime and attempts to restore it when activation has
+  not completed; the installer prints any path that still needs manual recovery.

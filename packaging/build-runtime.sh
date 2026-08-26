@@ -42,32 +42,52 @@ _bash_god_output_dir="$(CDPATH= cd "$_bash_god_output_dir" 2>/dev/null && pwd -P
 _bash_god_package_name="bash-god-$_bash_god_version"
 _bash_god_archive="$_bash_god_output_dir/$_bash_god_package_name.tar.gz"
 _bash_god_checksum="$_bash_god_archive.sha256"
+_bash_god_installer_source="$_bash_god_package_dir/install-runtime.sh"
+_bash_god_installer="$_bash_god_output_dir/install-runtime.sh"
+_bash_god_installer_checksum="$_bash_god_installer.sha256"
 
-if [ -e "$_bash_god_archive" ] || [ -L "$_bash_god_archive" ] || \
-   [ -e "$_bash_god_checksum" ] || [ -L "$_bash_god_checksum" ]; then
-  _bash_god_package_die "refusing to overwrite an existing artifact in $_bash_god_output_dir"
-fi
+for _bash_god_artifact in "$_bash_god_archive" "$_bash_god_checksum" "$_bash_god_installer" "$_bash_god_installer_checksum"; do
+  if [ -e "$_bash_god_artifact" ] || [ -L "$_bash_god_artifact" ]; then
+    _bash_god_package_die "refusing to overwrite an existing artifact in $_bash_god_output_dir"
+  fi
+done
+[ -r "$_bash_god_installer_source" ] || _bash_god_package_die "cannot read $_bash_god_installer_source"
 
 _bash_god_stage="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-package.XXXXXX")" || exit 1
-_bash_god_archive_created=0
-_bash_god_checksum_created=0
-_bash_god_publish_archive=''
-_bash_god_publish_checksum=''
+_bash_god_created_artifacts=()
+_bash_god_publish_current=''
 _bash_god_package_cleanup() {
   _bash_god_cleanup_status="$1"
   if [ "$_bash_god_cleanup_status" -ne 0 ]; then
-    [ "$_bash_god_checksum_created" -eq 0 ] || command rm -f -- "$_bash_god_checksum"
-    [ "$_bash_god_archive_created" -eq 0 ] || command rm -f -- "$_bash_god_archive"
+    for _bash_god_created_artifact in "${_bash_god_created_artifacts[@]}"; do
+      command rm -f -- "$_bash_god_created_artifact"
+    done
   fi
-  [ -z "$_bash_god_publish_checksum" ] || command rm -f -- "$_bash_god_publish_checksum"
-  [ -z "$_bash_god_publish_archive" ] || command rm -f -- "$_bash_god_publish_archive"
+  [ -z "$_bash_god_publish_current" ] || command rm -f -- "$_bash_god_publish_current"
   command rm -rf -- "$_bash_god_stage"
+}
+_bash_god_publish_file() {
+  _bash_god_publish_source="$1"
+  _bash_god_publish_target="$2"
+  _bash_god_publish_mode="$3"
+
+  _bash_god_publish_current="$(mktemp "$_bash_god_output_dir/.bash-god-publish.XXXXXX")" || \
+    _bash_god_package_die 'could not create a private artifact publication file.'
+  command cat "$_bash_god_publish_source" > "$_bash_god_publish_current"
+  chmod "$_bash_god_publish_mode" "$_bash_god_publish_current"
+  ln "$_bash_god_publish_current" "$_bash_god_publish_target" || \
+    _bash_god_package_die "refusing to overwrite artifact: $_bash_god_publish_target"
+  _bash_god_created_artifacts+=("$_bash_god_publish_target")
+  command rm -f -- "$_bash_god_publish_current"
+  _bash_god_publish_current=''
 }
 trap '_bash_god_package_cleanup $?' EXIT
 trap 'exit 1' HUP INT TERM
 _bash_god_root="$_bash_god_stage/$_bash_god_package_name"
 _bash_god_staged_archive="$_bash_god_stage/$_bash_god_package_name.tar.gz"
 _bash_god_staged_checksum="$_bash_god_staged_archive.sha256"
+_bash_god_staged_installer="$_bash_god_stage/install-runtime.sh"
+_bash_god_staged_installer_checksum="$_bash_god_staged_installer.sha256"
 
 mkdir -p \
   "$_bash_god_root/bin" \
@@ -106,29 +126,21 @@ chmod 0755 "$_bash_god_root/bin/god" "$_bash_god_root/lib/bash-god/god"
 
 _bash_god_hash="$(_bash_god_sha256 "$_bash_god_staged_archive")"
 printf '%s  %s\n' "$_bash_god_hash" "$(basename "$_bash_god_archive")" > "$_bash_god_staged_checksum"
+cp "$_bash_god_installer_source" "$_bash_god_staged_installer"
+chmod 0755 "$_bash_god_staged_installer"
+_bash_god_installer_hash="$(_bash_god_sha256 "$_bash_god_staged_installer")"
+printf '%s  %s\n' "$_bash_god_installer_hash" "$(basename "$_bash_god_installer")" > "$_bash_god_staged_installer_checksum"
 
 # Publish through same-filesystem temporary files. Hard-link creation is atomic and never replaces an
 # existing path, including one that appears after the initial check.
-_bash_god_publish_archive="$(mktemp "$_bash_god_output_dir/.bash-god-archive.XXXXXX")" || \
-  _bash_god_package_die 'could not create a private archive publication file.'
-command cat "$_bash_god_staged_archive" > "$_bash_god_publish_archive"
-chmod 0644 "$_bash_god_publish_archive"
-ln "$_bash_god_publish_archive" "$_bash_god_archive" || \
-  _bash_god_package_die "refusing to overwrite archive: $_bash_god_archive"
-_bash_god_archive_created=1
-command rm -f -- "$_bash_god_publish_archive"
-_bash_god_publish_archive=''
-
-_bash_god_publish_checksum="$(mktemp "$_bash_god_output_dir/.bash-god-checksum.XXXXXX")" || \
-  _bash_god_package_die 'could not create a private checksum publication file.'
-command cat "$_bash_god_staged_checksum" > "$_bash_god_publish_checksum"
-chmod 0644 "$_bash_god_publish_checksum"
-ln "$_bash_god_publish_checksum" "$_bash_god_checksum" || \
-  _bash_god_package_die "refusing to overwrite checksum: $_bash_god_checksum"
-_bash_god_checksum_created=1
-command rm -f -- "$_bash_god_publish_checksum"
-_bash_god_publish_checksum=''
+_bash_god_publish_file "$_bash_god_staged_archive" "$_bash_god_archive" 0644
+_bash_god_publish_file "$_bash_god_staged_checksum" "$_bash_god_checksum" 0644
+_bash_god_publish_file "$_bash_god_staged_installer" "$_bash_god_installer" 0755
+_bash_god_publish_file "$_bash_god_staged_installer_checksum" "$_bash_god_installer_checksum" 0644
 
 printf 'Built %s\n' "$_bash_god_archive"
 printf 'SHA-256 %s\n' "$_bash_god_hash"
 printf 'Checksum %s\n' "$_bash_god_checksum"
+printf 'Installer %s\n' "$_bash_god_installer"
+printf 'Installer SHA-256 %s\n' "$_bash_god_installer_hash"
+printf 'Installer checksum %s\n' "$_bash_god_installer_checksum"

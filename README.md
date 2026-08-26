@@ -77,7 +77,8 @@ Redirected and piped output stays unpadded.
 
 The runtime release contains only the executable shim, six shell modules, service catalogs, and the
 MIT license. It excludes personal aliases, `BASH_GOD.sh`, tests, contributor docs, and credentials.
-It needs Bash and ordinary base utilities, but none of the service CLIs merely to browse knowledge.
+Installation needs Bash, `curl`, `tar`, `mktemp`, and `sha256sum`; browsing knowledge needs only Bash
+and ordinary base utilities. None of the service CLIs are required merely to browse the catalog.
 
 For release `0.0.1.1`, run these commands as `ec2-user`—no `sudo` or shell sourcing is required:
 
@@ -86,6 +87,9 @@ release_url="https://github.com/hemang11/BASH-GOD/releases/download/v0.0.1.1"
 curl -fLO "$release_url/bash-god-0.0.1.1.tar.gz"
 curl -fLO "$release_url/bash-god-0.0.1.1.tar.gz.sha256"
 curl -fLO "$release_url/install-runtime.sh"
+curl -fLO "$release_url/install-runtime.sh.sha256"
+sha256sum -c install-runtime.sh.sha256
+sha256sum -c bash-god-0.0.1.1.tar.gz.sha256
 chmod +x install-runtime.sh
 ./install-runtime.sh bash-god-0.0.1.1.tar.gz bash-god-0.0.1.1.tar.gz.sha256
 export PATH="$HOME/.local/bin:$PATH"
@@ -93,10 +97,11 @@ god --version
 god
 ```
 
-The installer verifies SHA-256, validates the archive, stages and probes the CLI, installs under
-`~/.local`, and never edits `.bashrc`. Add the `export PATH=...` line to `.bashrc` yourself only if
-you want it in future sessions. A future upgrade uses the same command with `--replace`; the previous
-runtime is retained under `~/.local/lib` for rollback.
+The installer and archive are both verified before execution. The installer validates the archive,
+stages and probes the CLI, installs under `~/.local`, and never edits `.bashrc`. Add the
+`export PATH=...` line to `.bashrc` yourself only if you want it in future sessions. A future upgrade
+uses the same command with `--replace`; the installer prints the exact path of the retained runtime
+for manual recovery.
 
 ## Navigation and search
 
@@ -246,7 +251,7 @@ If `shellcheck` is already installed, it is also useful. BASH_GOD does not requi
 
 ## Packaging Status
 
-The CLI-only GitHub Release archive, checksum, and installer are supported for direct EC2/Linux
+The CLI-only GitHub Release archive, installer, and both checksums are supported for direct EC2/Linux
 installation. Homebrew formulae and APT repositories are not published yet.
 
 ## License
