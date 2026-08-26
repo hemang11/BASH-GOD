@@ -45,6 +45,18 @@ not_contains() {
   ! contains "$1" "$2"
 }
 
+has_single_leading_newline() {
+  local newline
+
+  newline='
+'
+  case "$1" in
+    "$newline$newline"*) return 1 ;;
+    "$newline"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 catalog_group_count() {
   LC_ALL=C awk '/^@group[[:space:]]+/ { count++ } END { print count + 0 }' "$1"
 }
@@ -125,10 +137,20 @@ interactive_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { r
 interactive_help_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god help' _ "$project_dir")"
 interactive_long_help_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god --help' _ "$project_dir")"
 interactive_quiet_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god --quiet' _ "$project_dir")"
-if contains "$interactive_output" "$logo_first" && contains "$interactive_output" "$logo_last" && contains "$interactive_output" "$home_slogan" && not_contains "$interactive_help_output" "$logo_first" && not_contains "$interactive_long_help_output" "$logo_first" && [ "$interactive_quiet_output" = "$help_output" ]; then
+if contains "$interactive_output" "$logo_first" && contains "$interactive_output" "$logo_last" && contains "$interactive_output" "$home_slogan" && not_contains "$interactive_help_output" "$logo_first" && not_contains "$interactive_long_help_output" "$logo_first" && [ "$interactive_quiet_output" = "$interactive_help_output" ]; then
   pass 'pre-rendered logo is limited to bare interactive god'
 else
   fail 'pre-rendered logo is limited to bare interactive god'
+fi
+
+interactive_service_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god kafka' _ "$project_dir")"
+interactive_tree_alias_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god tree kafka' _ "$project_dir")"
+interactive_version_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god --version' _ "$project_dir")"
+interactive_error_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=invalid god help' _ "$project_dir" 2>&1)"
+if has_single_leading_newline "$interactive_output" && has_single_leading_newline "$interactive_help_output" && has_single_leading_newline "$interactive_service_output" && has_single_leading_newline "$interactive_tree_alias_output" && has_single_leading_newline "$interactive_version_output" && has_single_leading_newline "$interactive_error_output" && ! has_single_leading_newline "$output"; then
+  pass 'every top-level interactive command leaves one leading line without padding pipes'
+else
+  fail 'every top-level interactive command leaves one leading line without padding pipes'
 fi
 
 version_output="$(GOD_COLOR=never "$god_cli" --version)"
@@ -375,6 +397,15 @@ if [ "$unsafe_color_status" -eq 2 ] && [ "$unsafe_route_status" -eq 2 ] && not_c
   pass 'invalid input cannot inject terminal controls'
 else
   fail 'invalid input cannot inject terminal controls'
+fi
+
+arithmetic_marker='ARITHMETIC_INJECTION'
+unsafe_depth_output="$(env '_GOD_CALL_DEPTH=x[$(printf ARITHMETIC_INJECTION >&2)]' GOD_COLOR=never "$god_cli" --version 2>&1)"
+unsafe_depth_status=$?
+if [ "$unsafe_depth_status" -eq 0 ] && contains "$unsafe_depth_output" 'BASH_GOD 0.0.1.1' && not_contains "$unsafe_depth_output" "$arithmetic_marker"; then
+  pass 'untrusted call-depth state remains inert'
+else
+  fail 'untrusted call-depth state remains inert'
 fi
 
 enumeration_status=0

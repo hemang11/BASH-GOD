@@ -70,7 +70,35 @@ god kafka native                     # Native Kafka help commands
 
 Service and group names must match exactly, but matching is case-insensitive: `god KAFKA OFFSET` and `god kafka offset` are equivalent. Search terms are forgiving and do not need to match an exact route.
 
-### Navigation and search
+Interactive commands begin with one blank line so their output does not touch the shell prompt.
+Redirected and piped output stays unpadded.
+
+## Install Only the CLI on EC2
+
+The runtime release contains only the executable shim, six shell modules, service catalogs, and the
+MIT license. It excludes personal aliases, `BASH_GOD.sh`, tests, contributor docs, and credentials.
+It needs Bash and ordinary base utilities, but none of the service CLIs merely to browse knowledge.
+
+For release `0.0.1.1`, run these commands as `ec2-user`—no `sudo` or shell sourcing is required:
+
+```bash
+release_url="https://github.com/hemang11/BASH-GOD/releases/download/v0.0.1.1"
+curl -fLO "$release_url/bash-god-0.0.1.1.tar.gz"
+curl -fLO "$release_url/bash-god-0.0.1.1.tar.gz.sha256"
+curl -fLO "$release_url/install-runtime.sh"
+chmod +x install-runtime.sh
+./install-runtime.sh bash-god-0.0.1.1.tar.gz bash-god-0.0.1.1.tar.gz.sha256
+export PATH="$HOME/.local/bin:$PATH"
+god --version
+god
+```
+
+The installer verifies SHA-256, validates the archive, stages and probes the CLI, installs under
+`~/.local`, and never edits `.bashrc`. Add the `export PATH=...` line to `.bashrc` yourself only if
+you want it in future sessions. A future upgrade uses the same command with `--replace`; the previous
+runtime is retained under `~/.local/lib` for rollback.
+
+## Navigation and search
 
 | Route or key | Result |
 |---|---|
@@ -218,7 +246,8 @@ If `shellcheck` is already installed, it is also useful. BASH_GOD does not requi
 
 ## Packaging Status
 
-Direct clone/source and `./god` usage work today. Homebrew and APT packages are not published yet; release archives, checksums, formula metadata, and Linux repository plumbing are future distribution work.
+The CLI-only GitHub Release archive, checksum, and installer are supported for direct EC2/Linux
+installation. Homebrew formulae and APT repositories are not published yet.
 
 ## License
 

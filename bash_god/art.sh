@@ -7,6 +7,11 @@ _god_stdout_is_terminal() {
   [ -t 1 ]
 }
 
+_god_print_command_spacing() {
+  _god_stdout_is_terminal || return 0
+  printf '\n'
+}
+
 _god_print_home_art() {
   [ "${_GOD_QUIET:-0}" != "1" ] || return 0
   _god_stdout_is_terminal || return 0

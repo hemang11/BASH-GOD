@@ -174,11 +174,18 @@ _god_print_unknown_group() {
 }
 
 god() {
-  local first first_lower catalog service second second_lower group third third_lower tree_full argument
+  local first first_lower catalog service second second_lower group third third_lower tree_full argument parent_call_depth parent_quiet
   local -a god_arguments
-  local _GOD_QUIET
 
-  _GOD_QUIET="${_GOD_QUIET:-0}"
+  parent_call_depth="${_GOD_CALL_DEPTH:-0}"
+  parent_quiet="${_GOD_QUIET:-0}"
+  local _GOD_CALL_DEPTH
+  local _GOD_QUIET
+  case "$parent_call_depth" in
+    1|2) _GOD_CALL_DEPTH=2 ;;
+    *) _GOD_CALL_DEPTH=1 ;;
+  esac
+  _GOD_QUIET="$parent_quiet"
   god_arguments=()
   for argument in "$@"; do
     if [ "$(_god_lower "$argument")" = "--quiet" ]; then
@@ -189,6 +196,9 @@ god() {
   done
   set -- "${god_arguments[@]}"
 
+  if [ "$_GOD_CALL_DEPTH" = 1 ]; then
+    _god_print_command_spacing
+  fi
   _god_style_init || return $?
   _god_validate_all_catalogs || return $?
 

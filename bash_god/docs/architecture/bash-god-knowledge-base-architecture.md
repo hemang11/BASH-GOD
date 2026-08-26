@@ -301,6 +301,9 @@ and root-level `god -v` print only
   `toilet`, or another banner generator.
 - Only bare `god` on a TTY renders the logo and slogan. `god help`, scoped routes, redirected or piped
   output, and errors never do. The global exact `--quiet` option suppresses it explicitly.
+- Every top-level TTY invocation prints one leading blank line to separate the command output from the
+  shell prompt. Non-TTY output stays unpadded, and an invocation-depth guard prevents recursive tree
+  routing from producing duplicate blank lines.
 - Magenta framed banners identify normal views; tree mode uses a compact branch heading to save rows.
 - Cyan routes and bullets show navigation.
 - Green `$` lines identify commands to copy.

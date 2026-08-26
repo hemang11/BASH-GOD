@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# Real-file launcher installed at PREFIX/bin/god by the runtime package.
+_bash_god_bin_dir="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)" || exit 1
+_bash_god_prefix="$(CDPATH= cd "$_bash_god_bin_dir/.." 2>/dev/null && pwd -P)" || exit 1
+_bash_god_runtime="$_bash_god_prefix/lib/bash-god/god"
+
+if [ ! -x "$_bash_god_runtime" ]; then
+  printf 'BASH_GOD: packaged runtime is missing or not executable: %s\n' "$_bash_god_runtime" >&2
+  exit 1
+fi
+
+exec "$_bash_god_runtime" "$@"

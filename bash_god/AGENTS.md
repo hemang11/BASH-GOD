@@ -108,6 +108,9 @@ text came from a description, parameter, optional flag, or note.
 - Render the logo only for a bare `god` invocation when stdout is a TTY.
 - Keep `god help`, scoped commands, redirects, pipes, and error output free of the logo.
 - Honor the exact global `--quiet` option at every route position.
+- Start each top-level interactive invocation with exactly one blank line so output is visually
+  separated from the prompt. Do not add that padding to redirected or piped stdout, and do not let
+  recursive routes such as `god tree kafka` print it twice.
 - Treat `NO_COLOR` as authoritative: when it is present, emit no ANSI sequences even if
   `GOD_COLOR=always`. On a TTY, this leaves the uncolored logo unless `--quiet` is also present.
 - Keep sourcing silent. Loading `BASH_GOD.sh` or `art.sh` must never print the logo or other output.
@@ -418,6 +421,8 @@ Confirm all of the following:
 - sourcing `BASH_GOD.sh` remains silent;
 - the pre-rendered logo appears only for bare `god` on a TTY;
 - `god help`, scoped routes, redirects, pipes, errors, and `--quiet` remain logo-free;
+- top-level TTY commands begin with one blank line while redirected output and recursive routes do not
+  gain extra padding;
 - `NO_COLOR` emits no ANSI sequences even with `GOD_COLOR=always`, while preserving plain TTY art;
 - `-q` still routes to search and is never interpreted as quiet mode;
 - the new record appears in the expected group;
