@@ -22,5 +22,9 @@ _god_print_home_art() {
   printf '%s██╔══██╗██╔══██║╚════██║██╔══██║   ██║   ██║██║   ██║██║  ██║%s\n' "$_GOD_ART_ROW_4" "$_GOD_RESET"
   printf '%s██████╔╝██║  ██║███████║██║  ██║   ╚██████╔╝╚██████╔╝██████╔╝%s\n' "$_GOD_ART_ROW_5" "$_GOD_RESET"
   printf '%s╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝    ╚═════╝  ╚═════╝ ╚═════╝%s\n' "$_GOD_ART_ROW_6" "$_GOD_RESET"
-  printf '\n%sYour DevOps command memory. Native commands, zero execution.%s\n\n' "$_GOD_BOLD" "$_GOD_RESET"
+  printf '\n%sBASH_GOD%s  %sv%s%s  %s%s%s  %s%s License%s\n' \
+    "$_GOD_BOLD" "$_GOD_RESET" "$_GOD_ART_ROW_6" "$_BASH_GOD_VERSION" "$_GOD_RESET" \
+    "$_GOD_DIM" "$_GOD_BULLET" "$_GOD_RESET" "$_GOD_DIM" "$_BASH_GOD_LICENSE" "$_GOD_RESET"
+  printf '%sYour DevOps command memory: searchable, copy-ready native commands.%s\n' "$_GOD_BOLD" "$_GOD_RESET"
+  printf '%sNative CLIs remain the source of truth.%s\n\n' "$_GOD_DIM" "$_GOD_RESET"
 }

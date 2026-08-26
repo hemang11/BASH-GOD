@@ -6,6 +6,10 @@ set -o pipefail
 _bash_god_package_test_file="${BASH_SOURCE[0]}"
 _bash_god_package_test_dir="$(CDPATH= cd "$(dirname "$_bash_god_package_test_file")" 2>/dev/null && pwd -P)" || exit 1
 _bash_god_package_root="$(CDPATH= cd "$_bash_god_package_test_dir/../.." 2>/dev/null && pwd -P)" || exit 1
+_bash_god_expected_version="$(LC_ALL=C awk -F"'" '/^_BASH_GOD_VERSION=/ { print $2; exit }' "$_bash_god_package_root/bash_god/core.sh")"
+_bash_god_package_name="bash-god-$_bash_god_expected_version"
+_bash_god_mismatch_version="${_bash_god_expected_version}0"
+_bash_god_mismatch_name="bash-god-$_bash_god_mismatch_version"
 _bash_god_package_temp="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-runtime-smoke.XXXXXX")" || exit 1
 trap 'rm -rf -- "$_bash_god_package_temp"' EXIT HUP INT TERM
 
@@ -59,23 +63,25 @@ fi
 _bash_god_dangling_output="$_bash_god_package_temp/dangling-output"
 _bash_god_dangling_target="$_bash_god_package_temp/dangling-target"
 mkdir -p "$_bash_god_dangling_output"
-ln -s "$_bash_god_dangling_target" "$_bash_god_dangling_output/bash-god-0.0.1.1.tar.gz"
+ln -s "$_bash_god_dangling_target" "$_bash_god_dangling_output/$_bash_god_package_name.tar.gz"
 _bash_god_dangling_status=0
 "$_bash_god_package_root/packaging/build-runtime.sh" "$_bash_god_dangling_output" >/dev/null 2>&1 || _bash_god_dangling_status=$?
-if [ "$_bash_god_dangling_status" -eq 1 ] && [ -L "$_bash_god_dangling_output/bash-god-0.0.1.1.tar.gz" ] && [ ! -e "$_bash_god_dangling_target" ]; then
+if [ "$_bash_god_dangling_status" -eq 1 ] && [ -L "$_bash_god_dangling_output/$_bash_god_package_name.tar.gz" ] && [ ! -e "$_bash_god_dangling_target" ]; then
   _bash_god_package_pass 'builder refuses dangling output symlinks without touching their target'
 else
   _bash_god_package_fail 'builder refuses dangling output symlinks without touching their target'
 fi
 
-_bash_god_package_archive="$_bash_god_package_output/bash-god-0.0.1.1.tar.gz"
+_bash_god_package_archive="$_bash_god_package_output/$_bash_god_package_name.tar.gz"
 _bash_god_package_checksum="$_bash_god_package_archive.sha256"
 _bash_god_package_installer="$_bash_god_package_output/install-runtime.sh"
 _bash_god_package_installer_checksum="$_bash_god_package_installer.sha256"
 _bash_god_package_installer_hash="$(_bash_god_package_sha256 "$_bash_god_package_installer")"
+_bash_god_package_installer_help="$("$_bash_god_package_installer" --help)"
 if [ -x "$_bash_god_package_installer" ] && [ ! -L "$_bash_god_package_installer" ] && \
    cmp -s "$_bash_god_package_installer" "$_bash_god_package_root/packaging/install-runtime.sh" && \
-   [ "$(command cat "$_bash_god_package_installer_checksum")" = "$_bash_god_package_installer_hash  install-runtime.sh" ]; then
+   [ "$(command cat "$_bash_god_package_installer_checksum")" = "$_bash_god_package_installer_hash  install-runtime.sh" ] && \
+   _bash_god_package_contains "$_bash_god_package_installer_help" 'Upgrade or reinstall a managed runtime'; then
   _bash_god_package_pass 'builder emits a checksum-verifiable installer asset'
 else
   _bash_god_package_fail 'builder emits a checksum-verifiable installer asset'
@@ -132,8 +138,8 @@ else
 fi
 
 _bash_god_package_cli="$_bash_god_package_prefix/bin/god"
-_bash_god_package_version="$(env -i PATH=/usr/bin:/bin TERM=dumb LC_ALL=C GOD_COLOR=never "$_bash_god_package_cli" --version 2>&1)"
-if [ "$_bash_god_package_version" = "$(printf 'BASH_GOD 0.0.1.1\nLicense: MIT')" ]; then
+_bash_god_package_version_output="$(env -i PATH=/usr/bin:/bin TERM=dumb LC_ALL=C GOD_COLOR=never "$_bash_god_package_cli" --version 2>&1)"
+if [ "$_bash_god_package_version_output" = "$(printf 'BASH_GOD %s\nLicense: MIT' "$_bash_god_expected_version")" ]; then
   _bash_god_package_pass 'packaged launcher works from an empty environment'
 else
   _bash_god_package_fail 'packaged launcher works from an empty environment'
@@ -191,12 +197,12 @@ else
 fi
 
 _bash_god_unexpected_work="$_bash_god_package_temp/unexpected-work"
-_bash_god_unexpected_archive="$_bash_god_package_temp/bash-god-0.0.1.1-unexpected.tar.gz"
+_bash_god_unexpected_archive="$_bash_god_package_temp/$_bash_god_package_name-unexpected.tar.gz"
 _bash_god_unexpected_checksum="$_bash_god_unexpected_archive.sha256"
 mkdir -p "$_bash_god_unexpected_work"
 tar -xzf "$_bash_god_package_archive" -C "$_bash_god_unexpected_work"
-printf 'not part of the runtime\n' > "$_bash_god_unexpected_work/bash-god-0.0.1.1/unexpected.txt"
-tar -czf "$_bash_god_unexpected_archive" -C "$_bash_god_unexpected_work" bash-god-0.0.1.1
+printf 'not part of the runtime\n' > "$_bash_god_unexpected_work/$_bash_god_package_name/unexpected.txt"
+tar -czf "$_bash_god_unexpected_archive" -C "$_bash_god_unexpected_work" "$_bash_god_package_name"
 _bash_god_package_write_checksum "$_bash_god_unexpected_archive" "$_bash_god_unexpected_checksum"
 _bash_god_unexpected_status=0
 "$_bash_god_package_root/packaging/install-runtime.sh" --prefix "$_bash_god_package_temp/unexpected-prefix" "$_bash_god_unexpected_archive" "$_bash_god_unexpected_checksum" >/dev/null 2>&1 || _bash_god_unexpected_status=$?
@@ -207,13 +213,13 @@ else
 fi
 
 _bash_god_link_work="$_bash_god_package_temp/link-work"
-_bash_god_link_archive="$_bash_god_package_temp/bash-god-0.0.1.1-link.tar.gz"
+_bash_god_link_archive="$_bash_god_package_temp/$_bash_god_package_name-link.tar.gz"
 _bash_god_link_checksum="$_bash_god_link_archive.sha256"
 mkdir -p "$_bash_god_link_work"
 tar -xzf "$_bash_god_package_archive" -C "$_bash_god_link_work"
-command rm -f "$_bash_god_link_work/bash-god-0.0.1.1/bin/god"
-ln -s "$_bash_god_package_temp/link-target" "$_bash_god_link_work/bash-god-0.0.1.1/bin/god"
-tar -czf "$_bash_god_link_archive" -C "$_bash_god_link_work" bash-god-0.0.1.1
+command rm -f "$_bash_god_link_work/$_bash_god_package_name/bin/god"
+ln -s "$_bash_god_package_temp/link-target" "$_bash_god_link_work/$_bash_god_package_name/bin/god"
+tar -czf "$_bash_god_link_archive" -C "$_bash_god_link_work" "$_bash_god_package_name"
 _bash_god_package_write_checksum "$_bash_god_link_archive" "$_bash_god_link_checksum"
 _bash_god_link_status=0
 "$_bash_god_package_root/packaging/install-runtime.sh" --prefix "$_bash_god_package_temp/link-prefix" "$_bash_god_link_archive" "$_bash_god_link_checksum" >/dev/null 2>&1 || _bash_god_link_status=$?
@@ -224,12 +230,12 @@ else
 fi
 
 _bash_god_mismatch_work="$_bash_god_package_temp/mismatch-work"
-_bash_god_mismatch_archive="$_bash_god_package_temp/bash-god-0.0.1.10.tar.gz"
+_bash_god_mismatch_archive="$_bash_god_package_temp/$_bash_god_mismatch_name.tar.gz"
 _bash_god_mismatch_checksum="$_bash_god_mismatch_archive.sha256"
 mkdir -p "$_bash_god_mismatch_work"
 tar -xzf "$_bash_god_package_archive" -C "$_bash_god_mismatch_work"
-mv "$_bash_god_mismatch_work/bash-god-0.0.1.1" "$_bash_god_mismatch_work/bash-god-0.0.1.10"
-tar -czf "$_bash_god_mismatch_archive" -C "$_bash_god_mismatch_work" bash-god-0.0.1.10
+mv "$_bash_god_mismatch_work/$_bash_god_package_name" "$_bash_god_mismatch_work/$_bash_god_mismatch_name"
+tar -czf "$_bash_god_mismatch_archive" -C "$_bash_god_mismatch_work" "$_bash_god_mismatch_name"
 _bash_god_package_write_checksum "$_bash_god_mismatch_archive" "$_bash_god_mismatch_checksum"
 _bash_god_mismatch_status=0
 "$_bash_god_package_root/packaging/install-runtime.sh" --prefix "$_bash_god_package_temp/mismatch-prefix" "$_bash_god_mismatch_archive" "$_bash_god_mismatch_checksum" >/dev/null 2>&1 || _bash_god_mismatch_status=$?
@@ -258,7 +264,7 @@ _bash_god_package_replace_status=0
 _bash_god_package_backup_container="$(command find "$_bash_god_package_prefix/lib" -type d -name 'bash-god.backup-*' -print | LC_ALL=C awk 'NR == 1 { print; exit }')"
 if [ "$_bash_god_package_reinstall_status" -eq 1 ] && [ "$_bash_god_package_replace_status" -eq 0 ] && [ -n "$_bash_god_package_backup_container" ] && \
    [ -x "$_bash_god_package_backup_container/runtime/god" ] && \
-   [ "$(GOD_COLOR=never "$_bash_god_package_backup_container/runtime/god" --version)" = "$(printf 'BASH_GOD 0.0.1.1\nLicense: MIT')" ]; then
+   [ "$(GOD_COLOR=never "$_bash_god_package_backup_container/runtime/god" --version)" = "$(printf 'BASH_GOD %s\nLicense: MIT' "$_bash_god_expected_version")" ]; then
   _bash_god_package_pass 'replacement is explicit and retains the previous runtime'
 else
   _bash_god_package_fail 'replacement is explicit and retains the previous runtime'

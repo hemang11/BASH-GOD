@@ -6,6 +6,7 @@ test_file="${BASH_SOURCE[0]}"
 test_dir="$(CDPATH= cd "$(dirname "$test_file")" 2>/dev/null && pwd -P)" || exit 1
 project_dir="$(CDPATH= cd "$test_dir/../.." 2>/dev/null && pwd -P)" || exit 1
 god_cli="$project_dir/god"
+expected_version="$(LC_ALL=C awk -F"'" '/^_BASH_GOD_VERSION=/ { print $2; exit }' "$project_dir/bash_god/core.sh")"
 aws_catalog="$project_dir/bash_god/catalog/aws/service.god"
 kafka_catalog="$project_dir/bash_god/catalog/kafka/service.god"
 general_catalog="$project_dir/bash_god/catalog/general/service.god"
@@ -114,13 +115,16 @@ health_unavailable_number="$(catalog_entry_number "$kafka_catalog" health 'Find 
 health_unavailable_label="$(printf '%02d' "$health_unavailable_number")"
 
 output="$(GOD_COLOR=never "$god_cli")"
-home_slogan='Your DevOps command memory. Native commands, zero execution.'
+home_identity="BASH_GOD  v$expected_version  •  MIT License"
+home_identity_ascii="BASH_GOD  v$expected_version  -  MIT License"
+home_slogan='Your DevOps command memory: searchable, copy-ready native commands.'
+home_philosophy='Native CLIs remain the source of truth.'
 logo_first='██████╗  █████╗ ███████╗██╗  ██╗    ██████╗  ██████╗ ██████╗'
 logo_last='╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝    ╚═════╝  ╚═════╝ ╚═════╝'
 services_table_start="$(printf 'SERVICES\n  SERVICE')"
 quick_start_first_row="$(printf 'QUICK START\n  god kafka')"
 view_keys_first_row="$(printf 'VIEW KEYS\n  <number>')"
-if contains "$output" "$services_table_start" && contains "$output" 'god aws' && contains "$output" "$quick_start_first_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_slogan"; then
+if contains "$output" "$services_table_start" && contains "$output" 'god aws' && contains "$output" "$quick_start_first_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_identity" && not_contains "$output" "$home_slogan"; then
   pass 'non-interactive root dashboard stays decoration-free'
 else
   fail 'non-interactive root dashboard stays decoration-free'
@@ -137,7 +141,7 @@ interactive_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { r
 interactive_help_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god help' _ "$project_dir")"
 interactive_long_help_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god --help' _ "$project_dir")"
 interactive_quiet_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god --quiet' _ "$project_dir")"
-if contains "$interactive_output" "$logo_first" && contains "$interactive_output" "$logo_last" && contains "$interactive_output" "$home_slogan" && not_contains "$interactive_help_output" "$logo_first" && not_contains "$interactive_long_help_output" "$logo_first" && [ "$interactive_quiet_output" = "$interactive_help_output" ]; then
+if contains "$interactive_output" "$logo_first" && contains "$interactive_output" "$logo_last" && contains "$interactive_output" "$home_identity" && contains "$interactive_output" "$home_slogan" && contains "$interactive_output" "$home_philosophy" && not_contains "$interactive_help_output" "$logo_first" && not_contains "$interactive_long_help_output" "$logo_first" && [ "$interactive_quiet_output" = "$interactive_help_output" ]; then
   pass 'pre-rendered logo is limited to bare interactive god'
 else
   fail 'pre-rendered logo is limited to bare interactive god'
@@ -156,7 +160,7 @@ fi
 version_output="$(GOD_COLOR=never "$god_cli" --version)"
 short_version_output="$(GOD_COLOR=never "$god_cli" -v)"
 license_text="$(command cat "$license_file")"
-if [ "$version_output" = "$short_version_output" ] && contains "$version_output" 'BASH_GOD 0.0.1.1' && contains "$version_output" 'License: MIT' && not_contains "$version_output" 'GNU bash' && contains "$license_text" 'MIT License'; then
+if [ "$version_output" = "$short_version_output" ] && contains "$version_output" "BASH_GOD $expected_version" && contains "$version_output" 'License: MIT' && not_contains "$version_output" 'GNU bash' && contains "$license_text" 'MIT License'; then
   pass 'version flags report only BASH_GOD version and MIT license'
 else
   fail 'version flags report only BASH_GOD version and MIT license'
@@ -402,7 +406,7 @@ fi
 arithmetic_marker='ARITHMETIC_INJECTION'
 unsafe_depth_output="$(env '_GOD_CALL_DEPTH=x[$(printf ARITHMETIC_INJECTION >&2)]' GOD_COLOR=never "$god_cli" --version 2>&1)"
 unsafe_depth_status=$?
-if [ "$unsafe_depth_status" -eq 0 ] && contains "$unsafe_depth_output" 'BASH_GOD 0.0.1.1' && not_contains "$unsafe_depth_output" "$arithmetic_marker"; then
+if [ "$unsafe_depth_status" -eq 0 ] && contains "$unsafe_depth_output" "BASH_GOD $expected_version" && not_contains "$unsafe_depth_output" "$arithmetic_marker"; then
   pass 'untrusted call-depth state remains inert'
 else
   fail 'untrusted call-depth state remains inert'
@@ -458,12 +462,13 @@ fi
 
 color_logo_output="$(bash -c 'unset NO_COLOR; . "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=always god' _ "$project_dir")"
 plain_logo_output="$(NO_COLOR=1 bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=always god' _ "$project_dir")"
+ascii_logo_output="$(LC_ALL=C bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; GOD_COLOR=never god' _ "$project_dir")"
 ivory_row="$(printf '\033[1;38;5;255m')"
 gold_row="$(printf '\033[1;38;5;220m')"
-if contains "$color_logo_output" "$ivory_row$logo_first" && contains "$color_logo_output" "$gold_row$logo_last" && contains "$plain_logo_output" "$logo_first" && not_contains "$plain_logo_output" "$escape_character"; then
-  pass 'home logo uses one ivory-to-gold gradient with a plain NO_COLOR form'
+if contains "$color_logo_output" "$ivory_row$logo_first" && contains "$color_logo_output" "$gold_row$logo_last" && contains "$color_logo_output" "${gold_row}v${expected_version}" && contains "$plain_logo_output" "$logo_first" && contains "$plain_logo_output" "$home_identity" && contains "$ascii_logo_output" "$home_identity_ascii" && not_contains "$plain_logo_output" "$escape_character"; then
+  pass 'home identity uses one ivory-to-gold gradient with plain and ASCII forms'
 else
-  fail 'home logo uses one ivory-to-gold gradient with a plain NO_COLOR form'
+  fail 'home identity uses one ivory-to-gold gradient with plain and ASCII forms'
 fi
 
 ascii_output="$(LC_ALL=C GOD_COLOR=never "$god_cli" kafka offset)"

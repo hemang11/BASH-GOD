@@ -105,6 +105,8 @@ text came from a description, parameter, optional flag, or note.
 
 - Store the six-line BASH GOD logo as pre-rendered text in `art.sh`; do not invoke `figlet`, `toilet`,
   or another generator at runtime.
+- Follow the logo with the compact identity strip: product version, license, command-memory purpose,
+  and the reminder that native CLIs remain the source of truth.
 - Render the logo only for a bare `god` invocation when stdout is a TTY.
 - Keep `god help`, scoped commands, redirects, pipes, and error output free of the logo.
 - Honor the exact global `--quiet` option at every route position.

@@ -12,6 +12,7 @@ _bash_god_install_die() {
 _bash_god_install_usage() {
   printf 'Usage: %s [--prefix PREFIX] [--replace] ARCHIVE CHECKSUM_FILE\n' "$0"
   printf '\nInstalls the CLI-only runtime under PREFIX (default: $HOME/.local).\n'
+  printf '  --replace  Upgrade or reinstall a managed runtime and retain the previous version.\n'
 }
 
 _bash_god_install_sha256() {

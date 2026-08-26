@@ -58,6 +58,20 @@ replacement requires `--replace` and retains a usable previous runtime.
 The default prefix is `$HOME/.local`. The installer does not use `sudo`, edit shell startup files, or
 execute any catalog command. It refuses to replace an unrelated `bin/god` or runtime directory.
 
+## Upgrade Flow
+
+Build or download and verify the newer release assets, then pass `--replace` to the same installer:
+
+```bash
+./install-runtime.sh --replace --prefix /absolute/prefix \
+  bash-god-NEW_VERSION.tar.gz \
+  bash-god-NEW_VERSION.tar.gz.sha256
+```
+
+The installer accepts only a managed existing runtime, retains it in a uniquely named backup
+directory, activates the verified replacement, and prints the backup path. There is deliberately no
+networked `god update` command: runtime upgrades remain outside the display-only knowledge CLI.
+
 ## Release Checklist
 
 1. Confirm the version in `bash_god/core.sh` and use the matching immutable tag `vVERSION`.

@@ -1,6 +1,6 @@
 # BASH_GOD Knowledge Base Architecture
 
-**Status:** Implemented in BASH_GOD 0.0.1.1
+**Status:** Implemented in BASH_GOD 0.0.1.2
 
 ## Context / Problem
 
@@ -289,7 +289,7 @@ with examples for the current scope. The routing invariant is that `--help`, `--
 changing the selected view; `-q` remains the query route. `--full` always modifies `--tree`;
 `<number>` always requires numbered group rows. `god --version`
 and root-level `god -v` print only
-`BASH_GOD 0.0.1.1` and `License: MIT`; they do not report the host shell version.
+`BASH_GOD 0.0.1.2` and `License: MIT`; they do not report the host shell version.
 
 - `0`: successful display or search with matches.
 - `1`: valid search with no matches.
@@ -299,6 +299,8 @@ and root-level `god -v` print only
 
 - The six-line BASH GOD logo is pre-rendered in `art.sh`; BASH_GOD never shells out to `figlet`,
   `toilet`, or another banner generator.
+- A compact identity strip beneath the logo shows `BASH_GOD`, the current version, the MIT license,
+  the searchable command-memory purpose, and the native-CLI source-of-truth philosophy.
 - Only bare `god` on a TTY renders the logo and slogan. `god help`, scoped routes, redirected or piped
   output, and errors never do. The global exact `--quiet` option suppresses it explicitly.
 - Every top-level TTY invocation prints one leading blank line to separate the command output from the

@@ -1,6 +1,6 @@
 # BASH_GOD
 
-**Version 0.0.1.1**
+**Version 0.0.1.2**
 
 Your DevOps command memory: searchable, copy-ready native commands without another operational CLI to learn.
 
@@ -73,35 +73,55 @@ Service and group names must match exactly, but matching is case-insensitive: `g
 Interactive commands begin with one blank line so their output does not touch the shell prompt.
 Redirected and piped output stays unpadded.
 
-## Install Only the CLI on EC2
+## Install a Release
 
 The runtime release contains only the executable shim, six shell modules, service catalogs, and the
 MIT license. It excludes personal aliases, `BASH_GOD.sh`, tests, contributor docs, and credentials.
-Installation needs Bash, `curl`, `tar`, `mktemp`, and `sha256sum`; browsing knowledge needs only Bash
-and ordinary base utilities. None of the service CLIs are required merely to browse the catalog.
+The direct installer works on a supported Bash host, including Linux/EC2 and macOS; it is not tied to
+one server. Installation needs Bash, `curl`, `tar`, `mktemp`, and either `sha256sum` or `shasum`.
+None of the service CLIs are required merely to browse the catalog.
 
-For release `0.0.1.1`, run these commands as `ec2-user`—no `sudo` or shell sourcing is required:
+Set the release version you want and run the block below. No `sudo` or shell sourcing is required:
 
 ```bash
-release_url="https://github.com/hemang11/BASH-GOD/releases/download/v0.0.1.1"
-curl -fLO "$release_url/bash-god-0.0.1.1.tar.gz"
-curl -fLO "$release_url/bash-god-0.0.1.1.tar.gz.sha256"
+# Latest published release; change this after the next Release is available.
+version="0.0.1.1"
+release_url="https://github.com/hemang11/BASH-GOD/releases/download/v$version"
+curl -fLO "$release_url/bash-god-$version.tar.gz"
+curl -fLO "$release_url/bash-god-$version.tar.gz.sha256"
 curl -fLO "$release_url/install-runtime.sh"
 curl -fLO "$release_url/install-runtime.sh.sha256"
-sha256sum -c install-runtime.sh.sha256
-sha256sum -c bash-god-0.0.1.1.tar.gz.sha256
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c install-runtime.sh.sha256
+  sha256sum -c "bash-god-$version.tar.gz.sha256"
+else
+  shasum -a 256 -c install-runtime.sh.sha256
+  shasum -a 256 -c "bash-god-$version.tar.gz.sha256"
+fi
 chmod +x install-runtime.sh
-./install-runtime.sh bash-god-0.0.1.1.tar.gz bash-god-0.0.1.1.tar.gz.sha256
+./install-runtime.sh "bash-god-$version.tar.gz" "bash-god-$version.tar.gz.sha256"
 export PATH="$HOME/.local/bin:$PATH"
 god --version
 god
 ```
 
 The installer and archive are both verified before execution. The installer validates the archive,
-stages and probes the CLI, installs under `~/.local`, and never edits `.bashrc`. Add the
-`export PATH=...` line to `.bashrc` yourself only if you want it in future sessions. A future upgrade
-uses the same command with `--replace`; the installer prints the exact path of the retained runtime
-for manual recovery.
+stages and probes the CLI, installs under `~/.local`, and never edits shell startup files. Add the
+`export PATH=...` line to your shell configuration yourself only if you want it in future sessions.
+
+## Update an Existing Installation
+
+Set `version` to the newly published release, repeat the download and checksum steps above, then add
+`--replace` to the installer command:
+
+```bash
+./install-runtime.sh --replace "bash-god-$version.tar.gz" "bash-god-$version.tar.gz.sha256"
+god --version
+```
+
+The update is explicit: BASH_GOD never downloads or executes an update from `god` itself. The
+installer retains the previous managed runtime under `~/.local/lib` and prints its exact recovery
+path.
 
 ## Navigation and search
 
@@ -251,7 +271,7 @@ If `shellcheck` is already installed, it is also useful. BASH_GOD does not requi
 
 ## Packaging Status
 
-The CLI-only GitHub Release archive, installer, and both checksums are supported for direct EC2/Linux
+The CLI-only GitHub Release archive, installer, and both checksums support direct Linux/macOS
 installation. Homebrew formulae and APT repositories are not published yet.
 
 ## License
