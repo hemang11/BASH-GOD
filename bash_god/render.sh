@@ -60,6 +60,7 @@ _god_print_view_keys() {
     printf '  %s%-38s%s %sSearch every catalog%s\n' "$_GOD_COMMAND" 'god q WORDS' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sSearch help and examples%s\n' "$_GOD_COMMAND" 'god q --help' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sShow BASH_GOD version and license%s\n' "$_GOD_COMMAND" 'god --version' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+    printf '  %s%-38s%s %sCompletely remove a managed GitHub install%s\n' "$_GOD_COMMAND" 'god --uninstall' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
   fi
 }
 
@@ -80,7 +81,9 @@ _god_print_root_help() {
   _god_print_view_key_rows
 
   printf '\n%s  Case-insensitive and display-only. Replace <placeholders> before copying.%s\n' "$_GOD_DIM" "$_GOD_RESET"
-  printf '%s  Keys: %sgod --keys%s%s    Version: %sgod --version%s\n' "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET"
+  printf '%s  Keys: %sgod --keys%s%s    Version: %sgod --version%s%s    Remove: %sgod --uninstall%s\n' \
+    "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET" \
+    "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET"
 }
 
 

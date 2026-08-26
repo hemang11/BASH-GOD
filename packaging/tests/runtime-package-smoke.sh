@@ -87,21 +87,18 @@ else
   _bash_god_package_fail 'builder emits a checksum-verifiable installer asset'
 fi
 
-_bash_god_package_setup="$_bash_god_package_output/setup-god.sh"
-_bash_god_package_setup_checksum="$_bash_god_package_setup.sha256"
-_bash_god_package_setup_hash="$(_bash_god_package_sha256 "$_bash_god_package_setup")"
-_bash_god_package_setup_help="$("$_bash_god_package_setup" --help)"
-if [ -x "$_bash_god_package_setup" ] && [ ! -L "$_bash_god_package_setup" ] && \
-   cmp -s "$_bash_god_package_setup" "$_bash_god_package_root/packaging/setup-god.sh" && \
-   [ "$(command cat "$_bash_god_package_setup_checksum")" = "$_bash_god_package_setup_hash  setup-god.sh" ] && \
-   _bash_god_package_contains "$_bash_god_package_setup_help" 'State-driven behavior:' && \
-   _bash_god_package_contains "$_bash_god_package_setup_help" 'offer the latest release installation' && \
-   _bash_god_package_contains "$_bash_god_package_setup_help" 'offer an update to the latest release' && \
-   _bash_god_package_contains "$_bash_god_package_setup_help" 'offer uninstall only; never reinstall or downgrade' && \
-   _bash_god_package_contains "$_bash_god_package_setup_help" '--uninstall'; then
-  _bash_god_package_pass 'builder emits a checksum-verifiable state-driven setup asset'
+_bash_god_package_bootstrap="$_bash_god_package_output/install.sh"
+_bash_god_package_bootstrap_checksum="$_bash_god_package_bootstrap.sha256"
+_bash_god_package_bootstrap_hash="$(_bash_god_package_sha256 "$_bash_god_package_bootstrap")"
+_bash_god_package_bootstrap_help="$("$_bash_god_package_bootstrap" --help)"
+if [ -x "$_bash_god_package_bootstrap" ] && [ ! -L "$_bash_god_package_bootstrap" ] && \
+   cmp -s "$_bash_god_package_bootstrap" "$_bash_god_package_root/packaging/install.sh" && \
+   [ "$(command cat "$_bash_god_package_bootstrap_checksum")" = "$_bash_god_package_bootstrap_hash  install.sh" ] && \
+   _bash_god_package_contains "$_bash_god_package_bootstrap_help" 'Installs the latest BASH_GOD GitHub Release' && \
+   _bash_god_package_contains "$_bash_god_package_bootstrap_help" 'god --uninstall'; then
+  _bash_god_package_pass 'builder emits a checksum-verifiable public install asset'
 else
-  _bash_god_package_fail 'builder emits a checksum-verifiable state-driven setup asset'
+  _bash_god_package_fail 'builder emits a checksum-verifiable public install asset'
 fi
 
 _bash_god_package_listing="$(tar -tzf "$_bash_god_package_archive" 2>/dev/null)"
@@ -134,18 +131,29 @@ lib/bash-god/bash_god/catalog/kafka/service.god
 lib/bash-god/bash_god/catalog/mongo/service.god
 lib/bash-god/bash_god/catalog/network/service.god
 lib/bash-god/bash_god/core.sh
+lib/bash-god/bash_god/maintenance.sh
 lib/bash-god/bash_god/render.sh
 lib/bash-god/bash_god/search.sh
 lib/bash-god/bash_god/tree.sh
 lib/bash-god/god
+share/bash-god/install-manifest
 share/licenses/bash-god/LICENSE'
 if [ "$_bash_god_package_actual_files" = "$_bash_god_package_expected_files" ] && \
    [ -x "$_bash_god_package_prefix/bin/god" ] && \
    [ ! -L "$_bash_god_package_prefix/bin/god" ] && \
    [ -x "$_bash_god_package_prefix/lib/bash-god/god" ]; then
-  _bash_god_package_pass 'installed runtime matches the 16-file allowlist'
+  _bash_god_package_pass 'installed runtime matches the 18-file allowlist'
 else
-  _bash_god_package_fail 'installed runtime matches the 16-file allowlist'
+  _bash_god_package_fail 'installed runtime matches the 18-file allowlist'
+fi
+
+_bash_god_package_manifest="$(command cat "$_bash_god_package_prefix/share/bash-god/install-manifest")"
+_bash_god_package_prefix_physical="$(CDPATH= cd "$_bash_god_package_prefix" && pwd -P)"
+_bash_god_package_expected_manifest="$(printf 'BASH_GOD_INSTALL_MANIFEST_V1\nmethod=github-release\nprefix=%s\nversion=%s' "$_bash_god_package_prefix_physical" "$_bash_god_expected_version")"
+if [ "$_bash_god_package_manifest" = "$_bash_god_package_expected_manifest" ]; then
+  _bash_god_package_pass 'installer records exact GitHub-managed ownership metadata'
+else
+  _bash_god_package_fail 'installer records exact GitHub-managed ownership metadata'
 fi
 
 if ! LC_ALL=C grep -R -E 'AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)[[:space:]]*=|ghp_|github_pat_|hvs\.' "$_bash_god_package_prefix" >/dev/null 2>&1; then

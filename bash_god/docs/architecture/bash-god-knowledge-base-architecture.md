@@ -1,6 +1,6 @@
 # BASH_GOD Knowledge Base Architecture
 
-**Status:** Implemented in BASH_GOD 0.0.1.2
+**Status:** Implemented in BASH_GOD 0.0.1.3
 
 ## Context / Problem
 
@@ -47,6 +47,10 @@ The UI uses progressive disclosure:
 
 Help, tree, details, numbered entries, and search read the same records, preventing separate command registries from drifting.
 
+Self-maintenance is deliberately outside the catalog engine. A manifest-verified direct GitHub
+installation may check for a newer BASH_GOD release on bare interactive startup, and
+`god --uninstall` may remove BASH_GOD itself. Neither path reads or executes catalog command text.
+
 ## Architecture Overview
 
 ```text
@@ -58,9 +62,9 @@ shell startup                 executable use
                     bash_god/core.sh
                     - initialize and dispatch
                               |
-          +-------------------+-------------------+-------------------+
-          |                   |                   |                   |
-          v                   v                   v                   v
+          +-------------------+-------------------+-------------------+-------------------+
+          |                   |                   |                   |                   |
+          v                   v                   v                   v                   v
   bash_god/catalog.sh   bash_god/art.sh    bash_god/render.sh   specialized views
                                             /            \
                                            v              v
@@ -68,6 +72,14 @@ shell startup                 executable use
                                            \              /
                                             v            v
           bash_god/catalog/<service>/service.god
+
+bare interactive god / god --uninstall
+                    |
+                    v
+          bash_god/maintenance.sh
+                    |
+                    v
+       verified BASH_GOD release assets only
 ```
 
 No path continues from catalog command text to a native CLI.
@@ -84,6 +96,7 @@ bash_god/
   art.sh
   core.sh
   catalog.sh
+  maintenance.sh
   render.sh
   search.sh
   tree.sh
@@ -115,6 +128,8 @@ bash_god/
 - `BASH_GOD.sh` is the single sourced entry point and loads the CLI silently.
 - `god` is an executable wrapper for direct use and testing.
 - `core.sh` owns initialization, shared styling primitives, module loading, and routing.
+- `maintenance.sh` owns cached direct-GitHub update checks and complete BASH_GOD removal. It runs in
+  a dedicated Bash process and never receives catalog command text.
 - `catalog.sh` owns catalog discovery, service-route resolution, and grammar validation.
 - `art.sh` owns the pre-rendered six-line identity and its TTY gate; sourcing it is silent and only
   bare `god` may render it.
@@ -127,6 +142,8 @@ bash_god/
 - `catalog/aws/service.god` holds AWS identity and read-only Route 53 inventory knowledge.
 - Elasticsearch, Kubernetes, Kafka, and MongoDB each own the matching service catalog directory.
 - `tests/smoke.sh` verifies that BASH_GOD only shows catalog knowledge in Bash and zsh.
+- `packaging/tests/` verifies release construction, one-line installation, update decisions,
+  cancellation, and full owned-path purge under isolated prefixes.
 - Existing aliases and functions remain in `BASH_GOD.sh`; the knowledge layer does not reinterpret them.
 
 Current service routes are `aws`, `elasticsearch`, `general`, `k8s`, `kafka`, `mongo`, and `network`.
@@ -289,7 +306,7 @@ with examples for the current scope. The routing invariant is that `--help`, `--
 changing the selected view; `-q` remains the query route. `--full` always modifies `--tree`;
 `<number>` always requires numbered group rows. `god --version`
 and root-level `god -v` print only
-`BASH_GOD 0.0.1.2` and `License: MIT`; they do not report the host shell version.
+`BASH_GOD 0.0.1.3` and `License: MIT`; they do not report the host shell version.
 
 - `0`: successful display or search with matches.
 - `1`: valid search with no matches.
@@ -359,6 +376,8 @@ After validation, root help, `god mongo`, tree, and search discover it automatic
 - Copy-ready wrapping without invoking Kafka or another native tool.
 - Pre-rendered artwork only for bare TTY `god`, exact slogan rendering, global `--quiet`, and
   logo-free help, scoped, redirected, piped, and error views.
+- Manifest-gated update/removal, silent offline checks, explicit update choice, default-cancel
+  uninstall, and removal of every BASH_GOD-owned runtime, backup, config, cache, state, and data path.
 
 ## Limitations / Risks
 
@@ -374,3 +393,5 @@ After validation, root help, `god mongo`, tree, and search discover it automatic
   terminals where those glyphs are undesirable.
 - BASH_GOD neither substitutes placeholders nor validates copied commands.
 - Warnings cannot prevent an operator from running a risky command.
+- Automatic update and `god --uninstall` apply only to direct GitHub installations carrying the
+  matching ownership manifest. Package managers and source checkouts retain ownership of their files.

@@ -14,10 +14,11 @@ startup files.
 
 ## Implementation Summary
 
-The builder emits a runtime archive, a low-level standalone installer, a state-driven setup utility,
-and one SHA-256 file for each asset. The low-level installer snapshots and validates the supplied
-archive, probes the staged CLI, and activates only the allowlisted runtime files. The setup utility
-checks the latest GitHub Release and offers only the action appropriate for the local install state.
+The builder emits a runtime archive, a low-level standalone installer, the public `install.sh`
+bootstrap, and one SHA-256 file for each asset. The low-level installer snapshots and validates the
+supplied archive, probes the staged CLI, activates only allowlisted runtime files, and records a
+managed-install manifest. The public bootstrap resolves the latest GitHub Release and installs its
+checksum-verified archive.
 
 ## Architecture / Flow
 
@@ -25,8 +26,9 @@ checks the latest GitHub Release and offers only the action appropriate for the 
 bash-god-VERSION/
   bin/god                              relocatable prefix launcher
   lib/bash-god/god                     repository CLI launcher
-  lib/bash-god/bash_god/*.sh           six runtime modules
+  lib/bash-god/bash_god/*.sh           seven runtime modules, including maintenance
   lib/bash-god/bash_god/catalog/*/service.god
+  share/bash-god/install-manifest      direct-GitHub ownership metadata
   share/licenses/bash-god/LICENSE
 ```
 
@@ -41,8 +43,8 @@ bash-god-VERSION.tar.gz
 bash-god-VERSION.tar.gz.sha256
 install-runtime.sh
 install-runtime.sh.sha256
-setup-god.sh
-setup-god.sh.sha256
+install.sh
+install.sh.sha256
 ```
 
 ## Verification
@@ -50,29 +52,34 @@ setup-god.sh.sha256
 ```bash
 ./packaging/build-runtime.sh
 ./packaging/tests/runtime-package-smoke.sh
-./packaging/tests/setup-god-smoke.sh
+./packaging/tests/install-smoke.sh
+./packaging/tests/maintenance-smoke.sh
 ```
 
 The builder writes all six listed assets beneath `dist/`. It refuses to overwrite existing files or
 dangling symlinks. The package smoke test builds from scratch, verifies both executable script
-assets and all relevant checksums, installs beneath a temporary prefix, compares the exact 16-file
-runtime allowlist, checks for credential material, exercises navigation/search/tree views with an
+assets and all relevant checksums, installs beneath a temporary prefix, compares the exact 18-file
+installed allowlist, checks for credential material, exercises navigation/search/tree views with an
 empty environment, rejects malformed packages and checksums, and verifies that replacement requires
-`--replace` and retains a usable previous runtime. The setup smoke suite exercises its install-state
-decisions without changing a real installation.
+`--replace` and retains a usable previous runtime. The install and maintenance suites use isolated
+homes and prefixes; they never change a real installation.
 
-## State-driven Setup
+## Public Installation
 
-Download and verify `setup-god.sh` plus `setup-god.sh.sha256`, then run the setup utility from an
-interactive terminal. It uses `$HOME/.local` as its managed prefix and behaves according to state:
+The public entry point is intentionally one command:
 
-- no managed installation: offers the latest published release;
-- older managed installation: offers an update;
-- current or newer managed installation: never reinstalls or downgrades, and offers uninstall only;
-- `--uninstall`: goes directly to the managed-installation removal prompt.
+```bash
+bash <(curl -fsSL https://github.com/hemang11/BASH-GOD/releases/latest/download/install.sh)
+```
 
-Declining an offer leaves the installation unchanged. The setup utility does not edit shell startup
-files, and it never replaces an unrelated `god` command or a partial installation.
+`install.sh` uses `$HOME/.local` by default, refuses unrelated or partial installations, downloads
+the archive and low-level installer, verifies both against their release checksums, and performs no
+downgrade. Re-running it while current is idempotent. An older direct-GitHub installation is upgraded
+through the same verified replacement path.
+
+The checksum beside `install.sh` remains a release asset for pinned/manual workflows. The one-line
+bootstrap itself is trusted through HTTPS, then verifies every subsequently downloaded executable
+and archive before activation.
 
 ## Local Installation Test
 
@@ -96,15 +103,26 @@ Build or download and verify the newer release assets, then pass `--replace` to 
 ```
 
 The installer accepts only a managed existing runtime, retains it in a uniquely named backup
-directory, activates the verified replacement, and prints the backup path. There is deliberately no
-networked `god update` command: runtime upgrades remain outside the display-only knowledge CLI.
+directory, activates the verified replacement, and prints the backup path.
+
+## Update and Removal
+
+The direct-GitHub runtime contains `maintenance.sh`. Only a bare interactive `god` invocation may
+perform a cached latest-release check; scoped knowledge commands, redirects, pipes, `--quiet`, and
+sourcing do not. When a newer version exists, an arrow-key menu offers **Update** or **Not now**.
+Network failure is silent and deferred.
+
+`god --uninstall` is the explicit removal route. It verifies the install manifest and launcher
+marker, lists every target, defaults to **Cancel**, and only then offers **Uninstall everything**.
+Confirmation removes all BASH_GOD-owned runtime, launcher, backups, license, metadata, configuration,
+cache, state, and data. It refuses source checkouts and package-manager-owned installations.
 
 ## Release Checklist
 
 1. Confirm the version in `bash_god/core.sh` and use the matching immutable tag `vVERSION`.
-2. Run the main smoke suite, runtime-package smoke suite, and setup smoke suite.
+2. Run the main smoke suite plus the runtime-package, install, and maintenance smoke suites.
 3. Build into a clean `dist/` directory.
-4. Publish the archive, low-level installer, setup utility, and all three `.sha256` files as release
+4. Publish the archive, low-level installer, public bootstrap, and all three `.sha256` files as release
    assets.
 5. Download the public assets and repeat an isolated-prefix install before announcing the release.
 
@@ -120,5 +138,5 @@ standard symlinked Cellar launcher needs separate formula work and is not suppor
   normalized yet.
 - An interrupted upgrade retains the previous runtime and attempts to restore it when activation has
   not completed; the installer prints any path that still needs manual recovery.
-- The setup utility depends on GitHub's latest-release redirect and requires an interactive terminal;
-  the low-level installer remains available for pinned or automated installation flows.
+- The bootstrap and automatic check depend on GitHub's latest-release redirect; the low-level
+  installer remains available for pinned or automated installation flows.

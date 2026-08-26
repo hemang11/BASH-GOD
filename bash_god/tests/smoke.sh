@@ -130,10 +130,28 @@ services_table_start="$(printf 'SERVICES\n  SERVICE')"
 quick_start_first_row="$(printf 'QUICK START\n  god kafka')"
 quick_start_semantic_row="$(printf '  %-44s %s' 'god kafka q "Get all consumers in a broker"' 'Search Kafka by remembered intent')"
 view_keys_first_row="$(printf 'VIEW KEYS\n  <number>')"
-if contains "$output" "$services_table_start" && contains "$output" 'god aws' && contains "$output" "$quick_start_first_row" && has_exact_line "$output" "$quick_start_semantic_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_identity" && not_contains "$output" "$home_slogan"; then
+if contains "$output" "$services_table_start" && contains "$output" 'god aws' && contains "$output" "$quick_start_first_row" && has_exact_line "$output" "$quick_start_semantic_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys' && contains "$output" 'god --uninstall' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_identity" && not_contains "$output" "$home_slogan"; then
   pass 'non-interactive root dashboard stays decoration-free'
 else
   fail 'non-interactive root dashboard stays decoration-free'
+fi
+
+maintenance_bare_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; _god_run_maintenance() { printf "maintenance:%s\n" "$1"; }; GOD_COLOR=never god' _ "$project_dir")"
+maintenance_help_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; _god_run_maintenance() { printf "maintenance:%s\n" "$1"; }; GOD_COLOR=never god help' _ "$project_dir")"
+maintenance_quiet_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; _god_run_maintenance() { printf "maintenance:%s\n" "$1"; }; GOD_COLOR=never god --quiet' _ "$project_dir")"
+if contains "$maintenance_bare_output" 'maintenance:check' && \
+   not_contains "$maintenance_help_output" 'maintenance:' && \
+   not_contains "$maintenance_quiet_output" 'maintenance:'; then
+  pass 'automatic update checks run only for bare non-quiet interactive god'
+else
+  fail 'automatic update checks run only for bare non-quiet interactive god'
+fi
+
+uninstall_route_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_validate_all_catalogs() { return 2; }; _god_run_maintenance() { printf "maintenance:%s\n" "$1"; }; GOD_COLOR=invalid god --uninstall' _ "$project_dir")"
+if [ "$uninstall_route_output" = 'maintenance:uninstall' ]; then
+  pass 'god --uninstall delegates only to maintenance even when catalogs or styles are broken'
+else
+  fail 'god --uninstall delegates only to maintenance even when catalogs or styles are broken'
 fi
 
 help_output="$(GOD_COLOR=never "$god_cli" help)"

@@ -39,30 +39,38 @@ BASH_GOD finds the native command. You decide whether to copy and run it.
 
 ## Install
 
+First installation only:
+
+```bash
+bash <(curl -fsSL https://github.com/hemang11/BASH-GOD/releases/latest/download/install.sh)
+```
+
+Then use it normally:
+
+```bash
+god
+```
+
+The installer puts the launcher at `~/.local/bin/god` and the runtime at `~/.local/lib/bash-god`. It does not use `sudo` or edit `.bashrc`, `.bash_profile`, `.zshrc`, or another startup file. If `~/.local/bin` is not already in `PATH`, the installer prints the exact export to add.
+
+A bare interactive `god` checks GitHub periodically. When a newer release exists, choose **Update** or **Not now** with the arrow keys and Enter. Offline checks fail silently, and scoped commands such as `god kafka` never perform the check.
+
+Complete removal:
+
+```bash
+god --uninstall
+```
+
+Removal defaults to **Cancel** and shows every owned path before deleting anything. Choosing **Uninstall everything** purges the managed runtime, launcher, backups, metadata, configuration, cache, state, and BASH_GOD data. Package-manager installations and source checkouts are refused so their owning installation method stays in control.
+
+For development, clone the repository and use `./god`, or source `BASH_GOD.sh`. Sourcing is silent and affects only the current shell:
+
 ```bash
 git clone https://github.com/hemang11/BASH-GOD.git
 cd BASH-GOD
 source ./BASH_GOD.sh
 god
 ```
-
-Sourcing is silent and affects only the current shell. BASH_GOD never edits `.bashrc`, `.bash_profile`, `.zshrc`, or another startup file. You can also use `./god` directly without sourcing anything.
-
-For a smaller CLI-only installation, use the verified release setup utility:
-
-```bash
-curl -fLO https://github.com/hemang11/BASH-GOD/releases/latest/download/setup-god.sh
-curl -fLO https://github.com/hemang11/BASH-GOD/releases/latest/download/setup-god.sh.sha256
-if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum -c setup-god.sh.sha256
-else
-  shasum -a 256 -c setup-god.sh.sha256
-fi
-chmod +x setup-god.sh
-./setup-god.sh
-```
-
-It installs below `~/.local` without `sudo` or shell-profile edits. Run the same script later to offer an update only when GitHub has a newer release; use `./setup-god.sh --uninstall` for removal. See the [runtime packaging guide](packaging/README.md) for the complete release flow.
 
 ## Remember only `god`
 
@@ -103,12 +111,9 @@ The catalog is deliberately curated around common operational work rather than e
 
 ```text
 god / BASH_GOD.sh
-        │
-        ▼
-routing · search · rendering · tree views
-        │
-        ▼
-bash_god/catalog/<service>/service.god
+├── routing · search · rendering · tree views
+│        └── bash_god/catalog/<service>/service.god
+└── managed install/update/removal · bash_god/maintenance.sh
 ```
 
 Every service owns one plain-text catalog. The same records power browsing, search, help, details, numbered explanations, and tree views, so there is no second command registry to maintain.
@@ -144,6 +149,7 @@ See the [catalog contribution guide](bash_god/AGENTS.md) for parameters, optiona
 ## Safety
 
 - BASH_GOD displays catalog commands; it does not execute them.
+- The only executable workflow owned by `god` is its own managed update and removal; it never executes an `@run` catalog entry.
 - Replace every `<placeholder>` before copying.
 - `WRITE`, `WARN`, and `DELETE` describe the native command's impact.
 - Never put credentials, tokens, private keys, authenticated URIs, or production payloads in a catalog.
@@ -157,6 +163,9 @@ The test suite renders catalog knowledge but never runs the displayed native com
 bash -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/smoke.sh
 zsh -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/smoke.sh
 ./bash_god/tests/smoke.sh
+./packaging/tests/runtime-package-smoke.sh
+./packaging/tests/install-smoke.sh
+./packaging/tests/maintenance-smoke.sh
 ```
 
 ## Limitations
@@ -164,7 +173,7 @@ zsh -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/smoke.sh
 - The catalog is intentionally useful rather than exhaustive.
 - Search is ranked word matching, not an embedding or conversational model.
 - Native flags and behavior can vary by installed version and environment.
-- Homebrew formulae and APT repositories are not published yet.
+- Automatic update and `god --uninstall` apply only to direct GitHub Release installations. Package-manager installs remain owned by their package manager.
 
 ## Documentation
 

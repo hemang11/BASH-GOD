@@ -13,7 +13,7 @@ fi
 
 _BASH_GOD_CORE_DIR="$(CDPATH= cd "$(dirname "$_BASH_GOD_CORE_FILE")" 2>/dev/null && pwd -P)"
 _BASH_GOD_CATALOG_DIR="$_BASH_GOD_CORE_DIR/catalog"
-_BASH_GOD_VERSION='0.0.1.2'
+_BASH_GOD_VERSION='0.0.1.3'
 _BASH_GOD_LICENSE='MIT'
 unset _BASH_GOD_CORE_FILE
 
@@ -161,6 +161,22 @@ _god_print_version() {
 # shellcheck source=search.sh
 . "$_BASH_GOD_CORE_DIR/search.sh" || return 1
 
+_god_run_maintenance() {
+  local action maintenance_file
+
+  action=$1
+  maintenance_file="$_BASH_GOD_CORE_DIR/maintenance.sh"
+  if [ ! -r "$maintenance_file" ]; then
+    if [ "$action" = uninstall ]; then
+      printf 'BASH_GOD: self-maintenance is unavailable in this installation.\n' >&2
+      printf 'Use the package manager or source checkout that installed BASH_GOD.\n' >&2
+      return 2
+    fi
+    return 0
+  fi
+  command bash "$maintenance_file" "$action" "$_BASH_GOD_VERSION"
+}
+
 _god_print_unknown_service() {
   _god_style_init 2 || return $?
   printf 'BASH_GOD: unknown service %s. Names must match exactly (case-insensitive).\n\n' "$1" >&2
@@ -174,7 +190,7 @@ _god_print_unknown_group() {
 }
 
 god() {
-  local first first_lower catalog service second second_lower group third third_lower tree_full argument parent_call_depth parent_quiet
+  local first first_lower catalog service second second_lower group third third_lower tree_full argument parent_call_depth parent_quiet maintenance_status
   local -a god_arguments
 
   parent_call_depth="${_GOD_CALL_DEPTH:-0}"
@@ -199,10 +215,27 @@ god() {
   if [ "$_GOD_CALL_DEPTH" = 1 ]; then
     _god_print_command_spacing
   fi
+  if [ "$#" -gt 0 ] && [ "$(_god_lower "$1")" = "--uninstall" ]; then
+    if [ "$#" -ne 1 ]; then
+      printf 'BASH_GOD: --uninstall does not accept additional arguments.\n' >&2
+      return 2
+    fi
+    _god_run_maintenance uninstall
+    return $?
+  fi
   _god_style_init || return $?
   _god_validate_all_catalogs || return $?
 
   if [ "$#" -eq 0 ]; then
+    if [ "$_GOD_CALL_DEPTH" = 1 ] && [ "$_GOD_QUIET" != 1 ] && _god_stdout_is_terminal; then
+      _god_run_maintenance check
+      maintenance_status=$?
+      case "$maintenance_status" in
+        0) ;;
+        10) return 0 ;;
+        *) return "$maintenance_status" ;;
+      esac
+    fi
     _god_print_home_art
     _god_print_root_help
     return $?

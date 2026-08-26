@@ -84,6 +84,7 @@ esac
 _bash_god_install_stage="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-install.XXXXXX")" || exit 1
 _bash_god_install_new_runtime=''
 _bash_god_install_new_launcher=''
+_bash_god_install_new_manifest=''
 _bash_god_install_runtime_target=''
 _bash_god_install_backup=''
 _bash_god_install_cleanup() {
@@ -95,6 +96,7 @@ _bash_god_install_cleanup() {
   command rm -rf -- "$_bash_god_install_stage"
   [ -z "$_bash_god_install_new_runtime" ] || command rm -rf -- "$_bash_god_install_new_runtime"
   [ -z "$_bash_god_install_new_launcher" ] || command rm -f -- "$_bash_god_install_new_launcher"
+  [ -z "$_bash_god_install_new_manifest" ] || command rm -f -- "$_bash_god_install_new_manifest"
 }
 trap '_bash_god_install_cleanup' EXIT
 trap 'exit 1' HUP INT TERM
@@ -152,7 +154,7 @@ while IFS= read -r _bash_god_install_entry; do
   case "$_bash_god_install_relative" in
     ''|bin/|lib/|lib/bash-god/|lib/bash-god/bash_god/|lib/bash-god/bash_god/catalog/|share/|share/licenses/|share/licenses/bash-god/)
       ;;
-    bin/god|lib/bash-god/god|lib/bash-god/bash_god/art.sh|lib/bash-god/bash_god/catalog.sh|lib/bash-god/bash_god/core.sh|lib/bash-god/bash_god/render.sh|lib/bash-god/bash_god/search.sh|lib/bash-god/bash_god/tree.sh|share/licenses/bash-god/LICENSE)
+    bin/god|lib/bash-god/god|lib/bash-god/bash_god/art.sh|lib/bash-god/bash_god/catalog.sh|lib/bash-god/bash_god/core.sh|lib/bash-god/bash_god/maintenance.sh|lib/bash-god/bash_god/render.sh|lib/bash-god/bash_god/search.sh|lib/bash-god/bash_god/tree.sh|share/licenses/bash-god/LICENSE)
       ;;
     lib/bash-god/bash_god/catalog/*/)
       _bash_god_install_service="${_bash_god_install_relative#lib/bash-god/bash_god/catalog/}"
@@ -189,6 +191,7 @@ for _bash_god_install_required in \
   lib/bash-god/bash_god/art.sh \
   lib/bash-god/bash_god/catalog.sh \
   lib/bash-god/bash_god/core.sh \
+  lib/bash-god/bash_god/maintenance.sh \
   lib/bash-god/bash_god/render.sh \
   lib/bash-god/bash_god/search.sh \
   lib/bash-god/bash_god/tree.sh \
@@ -209,6 +212,8 @@ _bash_god_install_lib_parent="$_bash_god_install_prefix/lib"
 _bash_god_install_runtime="$_bash_god_install_lib_parent/bash-god"
 _bash_god_install_runtime_target="$_bash_god_install_runtime"
 _bash_god_install_license_dir="$_bash_god_install_prefix/share/licenses/bash-god"
+_bash_god_install_metadata_dir="$_bash_god_install_prefix/share/bash-god"
+_bash_god_install_manifest="$_bash_god_install_metadata_dir/install-manifest"
 _bash_god_install_launcher="$_bash_god_install_bin_dir/god"
 
 if [ -L "$_bash_god_install_launcher" ]; then
@@ -227,8 +232,12 @@ fi
 if [ -L "$_bash_god_install_license_dir" ] || [ -L "$_bash_god_install_license_dir/LICENSE" ]; then
   _bash_god_install_die "refusing to write through a symlinked license path: $_bash_god_install_license_dir"
 fi
+if [ -L "$_bash_god_install_metadata_dir" ] || [ -L "$_bash_god_install_manifest" ]; then
+  _bash_god_install_die "refusing to write through a symlinked metadata path: $_bash_god_install_metadata_dir"
+fi
 
-mkdir -p "$_bash_god_install_bin_dir" "$_bash_god_install_lib_parent" "$_bash_god_install_license_dir"
+mkdir -p "$_bash_god_install_bin_dir" "$_bash_god_install_lib_parent" "$_bash_god_install_license_dir" "$_bash_god_install_metadata_dir"
+_bash_god_install_prefix_physical="$(CDPATH= cd "$_bash_god_install_prefix" 2>/dev/null && pwd -P)" || _bash_god_install_die 'could not resolve the physical installation prefix.'
 _bash_god_install_new_runtime="$(mktemp -d "$_bash_god_install_lib_parent/.bash-god.new.XXXXXX")" || _bash_god_install_die 'could not create a private runtime staging directory.'
 cp -R "$_bash_god_install_root/lib/bash-god/." "$_bash_god_install_new_runtime/"
 chmod 0755 "$_bash_god_install_new_runtime"
@@ -237,6 +246,11 @@ GOD_COLOR=never "$_bash_god_install_new_runtime/god" --version >/dev/null || _ba
 _bash_god_install_new_launcher="$(mktemp "$_bash_god_install_bin_dir/.god.new.XXXXXX")" || _bash_god_install_die 'could not create a private launcher staging file.'
 cp "$_bash_god_install_root/bin/god" "$_bash_god_install_new_launcher"
 chmod 0755 "$_bash_god_install_new_launcher"
+
+_bash_god_install_new_manifest="$(mktemp "$_bash_god_install_metadata_dir/.install-manifest.new.XXXXXX")" || _bash_god_install_die 'could not create a private install manifest.'
+printf 'BASH_GOD_INSTALL_MANIFEST_V1\nmethod=github-release\nprefix=%s\nversion=%s\n' \
+  "$_bash_god_install_prefix_physical" "$_bash_god_install_version" > "$_bash_god_install_new_manifest"
+chmod 0644 "$_bash_god_install_new_manifest"
 
 if [ -e "$_bash_god_install_runtime" ]; then
   _bash_god_install_old_version="$(GOD_COLOR=never "$_bash_god_install_runtime/god" --version 2>/dev/null | LC_ALL=C awk 'NR == 1 { print $2 }')"
@@ -257,6 +271,8 @@ _bash_god_install_new_runtime=''
 mv -f "$_bash_god_install_new_launcher" "$_bash_god_install_launcher"
 _bash_god_install_new_launcher=''
 cp "$_bash_god_install_root/share/licenses/bash-god/LICENSE" "$_bash_god_install_license_dir/LICENSE"
+mv -f "$_bash_god_install_new_manifest" "$_bash_god_install_manifest"
+_bash_god_install_new_manifest=''
 
 GOD_COLOR=never "$_bash_god_install_launcher" --version >/dev/null || _bash_god_install_die 'installed CLI failed its final version check.'
 printf 'Installed BASH_GOD %s\n' "$_bash_god_install_version"

@@ -85,12 +85,18 @@ god q <terms> --tree                  matching commands grouped as a hierarchy
 god q <terms> --tree --full           matching hierarchy plus native commands
 god q <terms> --details               full explanation of every match
 god --version                         BASH_GOD version and license
+god --uninstall                       purge a managed direct-GitHub installation
 ```
 
 The view keys work from root, service, group, and scoped-search routes. `--full` modifies `--tree`,
 so it always follows that key. `<number>` is the only contextual selector: it requires a group whose
 numbered rows are visible. It is generated from record order, is not a permanent command identifier,
 and never belongs in a `.god` record. Search results resolve to the current row number.
+
+`god --uninstall` and the cached update prompt are self-maintenance operations, not catalog routes.
+They execute only `bash_god/maintenance.sh`, never an `@run` value. Automatic update checks are
+limited to bare interactive `god` from a manifest-verified direct GitHub installation; package
+manager installs and source checkouts remain owned by their original installation method.
 
 `--quiet` is an exact global option: the dispatcher removes it wherever it appears and suppresses
 decorative home artwork without changing the requested data view. Do not reuse `-q` for quiet mode;
@@ -409,9 +415,12 @@ GOD_COLOR=never ./god --version
 Then run the non-operational checks:
 
 ```bash
-bash -n BASH_GOD.sh god bash_god/core.sh bash_god/catalog.sh bash_god/art.sh bash_god/render.sh bash_god/search.sh bash_god/tree.sh bash_god/tests/smoke.sh
+bash -n BASH_GOD.sh god bash_god/core.sh bash_god/catalog.sh bash_god/art.sh bash_god/maintenance.sh bash_god/render.sh bash_god/search.sh bash_god/tree.sh bash_god/tests/smoke.sh packaging/*.sh packaging/tests/*.sh
 zsh -n BASH_GOD.sh god bash_god/core.sh bash_god/catalog.sh bash_god/art.sh bash_god/render.sh bash_god/search.sh bash_god/tree.sh bash_god/tests/smoke.sh
 ./bash_god/tests/smoke.sh
+./packaging/tests/runtime-package-smoke.sh
+./packaging/tests/install-smoke.sh
+./packaging/tests/maintenance-smoke.sh
 git diff --check
 ```
 
