@@ -48,7 +48,21 @@ god
 
 Sourcing is silent and affects only the current shell. BASH_GOD never edits `.bashrc`, `.bash_profile`, `.zshrc`, or another startup file. You can also use `./god` directly without sourcing anything.
 
-For a smaller CLI-only installation, download the [latest GitHub Release](https://github.com/hemang11/BASH-GOD/releases/latest) and follow the verified checksum flow in the [runtime packaging guide](packaging/README.md). It installs below `~/.local` without `sudo`.
+For a smaller CLI-only installation, use the verified release setup utility:
+
+```bash
+curl -fLO https://github.com/hemang11/BASH-GOD/releases/latest/download/setup-god.sh
+curl -fLO https://github.com/hemang11/BASH-GOD/releases/latest/download/setup-god.sh.sha256
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c setup-god.sh.sha256
+else
+  shasum -a 256 -c setup-god.sh.sha256
+fi
+chmod +x setup-god.sh
+./setup-god.sh
+```
+
+It installs below `~/.local` without `sudo` or shell-profile edits. Run the same script later to offer an update only when GitHub has a newer release; use `./setup-god.sh --uninstall` for removal. See the [runtime packaging guide](packaging/README.md) for the complete release flow.
 
 ## Remember only `god`
 
@@ -57,7 +71,7 @@ god                              # Discover services
 god kafka                        # Browse Kafka knowledge
 god kafka offset                 # See copy-ready offset commands
 god kafka offset 1               # Explain one displayed command
-god q "consumer lag"             # Search from remembered words
+god kafka q "Get all consumers in a broker"  # Search Kafka by remembered intent
 god kafka --tree --full          # Show the full Kafka command tree
 ```
 
@@ -65,7 +79,7 @@ god kafka --tree --full          # Show the full Kafka command tree
 |---|---|
 | The service | `god mongo` |
 | The service and subject | `god k8s describe` |
-| A few words | `god q "unavailable leader"` |
+| Remembered Kafka intent | `god kafka q "Get all consumers in a broker"` |
 | A regular expression | `god q --regex 'offset\|lag'` |
 | Everything below a route | `god kafka native --tree --full` |
 

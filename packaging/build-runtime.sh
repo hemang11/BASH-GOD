@@ -45,13 +45,23 @@ _bash_god_checksum="$_bash_god_archive.sha256"
 _bash_god_installer_source="$_bash_god_package_dir/install-runtime.sh"
 _bash_god_installer="$_bash_god_output_dir/install-runtime.sh"
 _bash_god_installer_checksum="$_bash_god_installer.sha256"
+_bash_god_setup_source="$_bash_god_package_dir/setup-god.sh"
+_bash_god_setup="$_bash_god_output_dir/setup-god.sh"
+_bash_god_setup_checksum="$_bash_god_setup.sha256"
 
-for _bash_god_artifact in "$_bash_god_archive" "$_bash_god_checksum" "$_bash_god_installer" "$_bash_god_installer_checksum"; do
+for _bash_god_artifact in \
+  "$_bash_god_archive" \
+  "$_bash_god_checksum" \
+  "$_bash_god_installer" \
+  "$_bash_god_installer_checksum" \
+  "$_bash_god_setup" \
+  "$_bash_god_setup_checksum"; do
   if [ -e "$_bash_god_artifact" ] || [ -L "$_bash_god_artifact" ]; then
     _bash_god_package_die "refusing to overwrite an existing artifact in $_bash_god_output_dir"
   fi
 done
 [ -r "$_bash_god_installer_source" ] || _bash_god_package_die "cannot read $_bash_god_installer_source"
+[ -r "$_bash_god_setup_source" ] || _bash_god_package_die "cannot read $_bash_god_setup_source"
 
 _bash_god_stage="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-package.XXXXXX")" || exit 1
 _bash_god_created_artifacts=()
@@ -88,6 +98,8 @@ _bash_god_staged_archive="$_bash_god_stage/$_bash_god_package_name.tar.gz"
 _bash_god_staged_checksum="$_bash_god_staged_archive.sha256"
 _bash_god_staged_installer="$_bash_god_stage/install-runtime.sh"
 _bash_god_staged_installer_checksum="$_bash_god_staged_installer.sha256"
+_bash_god_staged_setup="$_bash_god_stage/setup-god.sh"
+_bash_god_staged_setup_checksum="$_bash_god_staged_setup.sha256"
 
 mkdir -p \
   "$_bash_god_root/bin" \
@@ -130,6 +142,10 @@ cp "$_bash_god_installer_source" "$_bash_god_staged_installer"
 chmod 0755 "$_bash_god_staged_installer"
 _bash_god_installer_hash="$(_bash_god_sha256 "$_bash_god_staged_installer")"
 printf '%s  %s\n' "$_bash_god_installer_hash" "$(basename "$_bash_god_installer")" > "$_bash_god_staged_installer_checksum"
+cp "$_bash_god_setup_source" "$_bash_god_staged_setup"
+chmod 0755 "$_bash_god_staged_setup"
+_bash_god_setup_hash="$(_bash_god_sha256 "$_bash_god_staged_setup")"
+printf '%s  %s\n' "$_bash_god_setup_hash" "$(basename "$_bash_god_setup")" > "$_bash_god_staged_setup_checksum"
 
 # Publish through same-filesystem temporary files. Hard-link creation is atomic and never replaces an
 # existing path, including one that appears after the initial check.
@@ -137,6 +153,8 @@ _bash_god_publish_file "$_bash_god_staged_archive" "$_bash_god_archive" 0644
 _bash_god_publish_file "$_bash_god_staged_checksum" "$_bash_god_checksum" 0644
 _bash_god_publish_file "$_bash_god_staged_installer" "$_bash_god_installer" 0755
 _bash_god_publish_file "$_bash_god_staged_installer_checksum" "$_bash_god_installer_checksum" 0644
+_bash_god_publish_file "$_bash_god_staged_setup" "$_bash_god_setup" 0755
+_bash_god_publish_file "$_bash_god_staged_setup_checksum" "$_bash_god_setup_checksum" 0644
 
 printf 'Built %s\n' "$_bash_god_archive"
 printf 'SHA-256 %s\n' "$_bash_god_hash"
@@ -144,3 +162,6 @@ printf 'Checksum %s\n' "$_bash_god_checksum"
 printf 'Installer %s\n' "$_bash_god_installer"
 printf 'Installer SHA-256 %s\n' "$_bash_god_installer_hash"
 printf 'Installer checksum %s\n' "$_bash_god_installer_checksum"
+printf 'Setup %s\n' "$_bash_god_setup"
+printf 'Setup SHA-256 %s\n' "$_bash_god_setup_hash"
+printf 'Setup checksum %s\n' "$_bash_god_setup_checksum"

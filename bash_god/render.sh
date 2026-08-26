@@ -70,11 +70,11 @@ _god_print_root_help() {
   _god_print_available_services || return $?
 
   printf '\n%sQUICK START%s\n' "$_GOD_BOLD" "$_GOD_RESET"
-  printf '  %s%-28s%s %sBrowse Kafka groups%s\n' "$_GOD_COMMAND" 'god kafka' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
-  printf '  %s%-28s%s %sView copy-ready commands%s\n' "$_GOD_COMMAND" 'god kafka offset' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
-  printf '  %s%-28s%s %sExplain one displayed row%s\n' "$_GOD_COMMAND" 'god kafka health <number>' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
-  printf '  %s%-28s%s %sFind a command from remembered words%s\n' "$_GOD_COMMAND" 'god q unavailable leader' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
-  printf '  %s%-28s%s %sUse an explicit regular expression%s\n' "$_GOD_COMMAND" "god q --regex 'offset|lag'" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+  printf '  %s%-44s%s %sBrowse Kafka groups%s\n' "$_GOD_COMMAND" 'god kafka' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+  printf '  %s%-44s%s %sView copy-ready commands%s\n' "$_GOD_COMMAND" 'god kafka offset' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+  printf '  %s%-44s%s %sExplain one displayed row%s\n' "$_GOD_COMMAND" 'god kafka health <number>' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+  printf '  %s%-44s%s %sSearch Kafka by remembered intent%s\n' "$_GOD_COMMAND" 'god kafka q "Get all consumers in a broker"' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+  printf '  %s%-44s%s %sUse an explicit regular expression%s\n' "$_GOD_COMMAND" "god q --regex 'offset|lag'" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
 
   printf '\n%sVIEW KEYS%s\n' "$_GOD_BOLD" "$_GOD_RESET"
   _god_print_view_key_rows

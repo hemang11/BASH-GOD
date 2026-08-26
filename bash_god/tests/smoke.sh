@@ -46,6 +46,10 @@ not_contains() {
   ! contains "$1" "$2"
 }
 
+has_exact_line() {
+  printf '%s\n' "$1" | LC_ALL=C grep -Fqx "$2"
+}
+
 has_single_leading_newline() {
   local newline
 
@@ -111,6 +115,7 @@ consume_exact_number="$(catalog_entry_number "$kafka_catalog" consume 'Read from
 consume_exact_label="$(printf '%02d' "$consume_exact_number")"
 offset_lag_number="$(catalog_entry_number "$kafka_catalog" offset 'Show consumer-group offsets and lag')"
 group_members_number="$(catalog_entry_number "$kafka_catalog" groups 'Show active members of a consumer group')"
+group_list_number="$(catalog_entry_number "$kafka_catalog" groups 'List consumer groups')"
 health_unavailable_number="$(catalog_entry_number "$kafka_catalog" health 'Find partitions without an available leader')"
 health_unavailable_label="$(printf '%02d' "$health_unavailable_number")"
 
@@ -123,8 +128,9 @@ logo_first='██████╗  █████╗ ███████╗�
 logo_last='╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝    ╚═════╝  ╚═════╝ ╚═════╝'
 services_table_start="$(printf 'SERVICES\n  SERVICE')"
 quick_start_first_row="$(printf 'QUICK START\n  god kafka')"
+quick_start_semantic_row="$(printf '  %-44s %s' 'god kafka q "Get all consumers in a broker"' 'Search Kafka by remembered intent')"
 view_keys_first_row="$(printf 'VIEW KEYS\n  <number>')"
-if contains "$output" "$services_table_start" && contains "$output" 'god aws' && contains "$output" "$quick_start_first_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_identity" && not_contains "$output" "$home_slogan"; then
+if contains "$output" "$services_table_start" && contains "$output" 'god aws' && contains "$output" "$quick_start_first_row" && has_exact_line "$output" "$quick_start_semantic_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_identity" && not_contains "$output" "$home_slogan"; then
   pass 'non-interactive root dashboard stays decoration-free'
 else
   fail 'non-interactive root dashboard stays decoration-free'
@@ -283,6 +289,15 @@ if contains "$remembered_query_output" 'Smart search: Get all consumers from a g
   pass 'conversational remembered wording finds the associated command'
 else
   fail 'conversational remembered wording finds the associated command'
+fi
+
+broker_query_output="$(GOD_COLOR=never "$god_cli" kafka q "Get all consumers in a broker")"
+broker_query_first_result="$(printf '%s\n' "$broker_query_output" | LC_ALL=C awk '/^  god / { print; exit }')"
+broker_query_expected_first="$(printf '  %-32s %s' "god kafka groups $group_list_number" 'List consumer groups')"
+if contains "$broker_query_output" 'Smart search: Get all consumers in a broker' && [ "$broker_query_first_result" = "$broker_query_expected_first" ]; then
+  pass 'scoped remembered intent ranks list consumer groups first'
+else
+  fail 'scoped remembered intent ranks list consumer groups first'
 fi
 
 service_query_output="$(GOD_COLOR=never "$god_cli" kafka q 'describe topic')"

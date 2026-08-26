@@ -87,6 +87,23 @@ else
   _bash_god_package_fail 'builder emits a checksum-verifiable installer asset'
 fi
 
+_bash_god_package_setup="$_bash_god_package_output/setup-god.sh"
+_bash_god_package_setup_checksum="$_bash_god_package_setup.sha256"
+_bash_god_package_setup_hash="$(_bash_god_package_sha256 "$_bash_god_package_setup")"
+_bash_god_package_setup_help="$("$_bash_god_package_setup" --help)"
+if [ -x "$_bash_god_package_setup" ] && [ ! -L "$_bash_god_package_setup" ] && \
+   cmp -s "$_bash_god_package_setup" "$_bash_god_package_root/packaging/setup-god.sh" && \
+   [ "$(command cat "$_bash_god_package_setup_checksum")" = "$_bash_god_package_setup_hash  setup-god.sh" ] && \
+   _bash_god_package_contains "$_bash_god_package_setup_help" 'State-driven behavior:' && \
+   _bash_god_package_contains "$_bash_god_package_setup_help" 'offer the latest release installation' && \
+   _bash_god_package_contains "$_bash_god_package_setup_help" 'offer an update to the latest release' && \
+   _bash_god_package_contains "$_bash_god_package_setup_help" 'offer uninstall only; never reinstall or downgrade' && \
+   _bash_god_package_contains "$_bash_god_package_setup_help" '--uninstall'; then
+  _bash_god_package_pass 'builder emits a checksum-verifiable state-driven setup asset'
+else
+  _bash_god_package_fail 'builder emits a checksum-verifiable state-driven setup asset'
+fi
+
 _bash_god_package_listing="$(tar -tzf "$_bash_god_package_archive" 2>/dev/null)"
 if [ -f "$_bash_god_package_archive" ] && [ -f "$_bash_god_package_checksum" ] && \
    ! _bash_god_package_contains "$_bash_god_package_listing" 'BASH_GOD.sh' && \
