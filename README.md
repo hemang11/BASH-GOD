@@ -1,32 +1,43 @@
 # BASH_GOD
 
-**Version 0.0.1.2**
+```text
+██████╗  █████╗ ███████╗██╗  ██╗    ██████╗  ██████╗ ██████╗
+██╔══██╗██╔══██╗██╔════╝██║  ██║   ██╔════╝ ██╔═══██╗██╔══██╗
+██████╔╝███████║███████╗███████║   ██║  ███╗██║   ██║██║  ██║
+██╔══██╗██╔══██║╚════██║██╔══██║   ██║   ██║██║   ██║██║  ██║
+██████╔╝██║  ██║███████║██║  ██║   ╚██████╔╝╚██████╔╝██████╔╝
+╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝    ╚═════╝  ╚═════╝ ╚═════╝
+```
 
-Your DevOps command memory: searchable, copy-ready native commands without another operational CLI to learn.
+**Your DevOps command memory. Searchable, copy-ready native commands. Zero execution.**
 
-> BASH_GOD is a curated memory layer for frequently used DevOps operations. Native CLIs remain the source of truth.
+[![GitHub release](https://img.shields.io/github/v/release/hemang11/BASH-GOD?style=flat-square&label=release&color=f6c344)](https://github.com/hemang11/BASH-GOD/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-f6c344?style=flat-square)](LICENSE)
+[![Bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-f6c344?style=flat-square)](https://www.gnu.org/software/bash/)
 
-## Context / Problem
+Stop searching Slack, old notes, and shell history for the command you used six months ago.
 
-Useful operational commands tend to disappear into shell history, old notes, and chat threads. BASH_GOD keeps the commands worth remembering in a small local catalog and makes them discoverable through routes such as `god mongo`, `god k8s describe`, or `god q "consumer lag"`.
+BASH_GOD keeps curated DevOps commands in a searchable local catalog. It shows you what to run, what it does, and what each parameter means. It never executes catalog commands for you.
 
-BASH_GOD displays knowledge. It never executes a catalog command, connects to a host, or forwards native CLI arguments.
+> BASH_GOD is a curated memory layer and orchestrator for frequently used DevOps operations. Native CLIs remain the source of truth and are always accessible through native-help commands.
 
-## Scope and Non-goals
+## See it in action
 
-BASH_GOD is intentionally:
+```console
+$ god q "consumer lag"
 
-- curated around common DevOps work, not every command in every manual;
-- organized by service and memorable groups;
-- searchable across titles, descriptions, commands, parameters, and notes;
-- explicit about commands that write, warn, or delete;
-- a bridge back to native help through each service's `native` group.
+OPEN                     OPERATION
+------------------------ ----------------------------------------------
+god kafka offset 1       Show consumer-group offsets and lag
 
-It is not a replacement for AWS, Kafka, MongoDB, Kubernetes, Elasticsearch, networking, or operating-system tools. It does not run commands, store credentials, auto-configure your shell, or guarantee that a native command matches every installed version.
+$ god kafka offset 1
+
+$ ./kafka-consumer-groups.sh --bootstrap-server localhost:9092 --command-config ../config/consumer.properties --group connections --describe
+```
+
+BASH_GOD finds the native command. You decide whether to copy and run it.
 
 ## Install
-
-Clone the repository and source its single entry point:
 
 ```bash
 git clone https://github.com/hemang11/BASH-GOD.git
@@ -35,245 +46,118 @@ source ./BASH_GOD.sh
 god
 ```
 
-Sourcing is silent. BASH_GOD does not edit `.bashrc`, `.bash_profile`, or `.zshrc`. To load it in future shells, manually add this line to the startup file you choose, using the real clone location:
+Sourcing is silent and affects only the current shell. BASH_GOD never edits `.bashrc`, `.bash_profile`, `.zshrc`, or another startup file. You can also use `./god` directly without sourcing anything.
+
+For a smaller CLI-only installation, download the [latest GitHub Release](https://github.com/hemang11/BASH-GOD/releases/latest) and follow the verified checksum flow in the [runtime packaging guide](packaging/README.md). It installs below `~/.local` without `sudo`.
+
+## Remember only `god`
 
 ```bash
-source "/absolute/path/to/BASH-GOD/BASH_GOD.sh"
+god                              # Discover services
+god kafka                        # Browse Kafka knowledge
+god kafka offset                 # See copy-ready offset commands
+god kafka offset 1               # Explain one displayed command
+god q "consumer lag"             # Search from remembered words
+god kafka --tree --full          # Show the full Kafka command tree
 ```
 
-On an interactive terminal, the bare `god` dashboard opens with a pre-rendered six-line BASH GOD
-logo. It is stored in the toolkit—`figlet`, `toilet`, and other banner generators are not runtime
-dependencies. The logo is omitted from `god help`, every scoped command, redirected or piped output,
-and errors. Add the exact global `--quiet` option anywhere in a route to suppress it explicitly.
-
-You can also use the executable without sourcing:
-
-```bash
-./god --version
-./god kafka offset
-```
-
-## Quick Use
-
-```bash
-god                                  # Show available services
-god --quiet                          # Show the dashboard without its logo
-god aws route53                      # Read-only Route 53 discovery commands
-god kafka offset                     # Kafka offset and consumer-lag commands
-god mongo service                    # MongoDB process and service checks
-god k8s describe                     # Kubernetes describe commands
-god general q "memory usage"         # Host CPU, memory, GPU, and storage knowledge
-god network q "list listening ports" # Networking and connectivity knowledge
-god elasticsearch shards             # Elasticsearch shard inspection
-god kafka native                     # Native Kafka help commands
-```
-
-Service and group names must match exactly, but matching is case-insensitive: `god KAFKA OFFSET` and `god kafka offset` are equivalent. Search terms are forgiving and do not need to match an exact route.
-
-Interactive commands begin with one blank line so their output does not touch the shell prompt.
-Redirected and piped output stays unpadded.
-
-## Install a Release
-
-The runtime release contains only the executable shim, six shell modules, service catalogs, and the
-MIT license. It excludes personal aliases, `BASH_GOD.sh`, tests, contributor docs, and credentials.
-The direct installer works on a supported Bash host, including Linux/EC2 and macOS; it is not tied to
-one server. Installation needs Bash, `curl`, `tar`, `mktemp`, and either `sha256sum` or `shasum`.
-None of the service CLIs are required merely to browse the catalog.
-
-Set the release version you want and run the block below. No `sudo` or shell sourcing is required:
-
-```bash
-# Latest published release; change this after the next Release is available.
-version="0.0.1.1"
-release_url="https://github.com/hemang11/BASH-GOD/releases/download/v$version"
-curl -fLO "$release_url/bash-god-$version.tar.gz"
-curl -fLO "$release_url/bash-god-$version.tar.gz.sha256"
-curl -fLO "$release_url/install-runtime.sh"
-curl -fLO "$release_url/install-runtime.sh.sha256"
-if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum -c install-runtime.sh.sha256
-  sha256sum -c "bash-god-$version.tar.gz.sha256"
-else
-  shasum -a 256 -c install-runtime.sh.sha256
-  shasum -a 256 -c "bash-god-$version.tar.gz.sha256"
-fi
-chmod +x install-runtime.sh
-./install-runtime.sh "bash-god-$version.tar.gz" "bash-god-$version.tar.gz.sha256"
-export PATH="$HOME/.local/bin:$PATH"
-god --version
-god
-```
-
-The installer and archive are both verified before execution. The installer validates the archive,
-stages and probes the CLI, installs under `~/.local`, and never edits shell startup files. Add the
-`export PATH=...` line to your shell configuration yourself only if you want it in future sessions.
-
-## Update an Existing Installation
-
-Set `version` to the newly published release, repeat the download and checksum steps above, then add
-`--replace` to the installer command:
-
-```bash
-./install-runtime.sh --replace "bash-god-$version.tar.gz" "bash-god-$version.tar.gz.sha256"
-god --version
-```
-
-The update is explicit: BASH_GOD never downloads or executes an update from `god` itself. The
-installer retains the previous managed runtime under `~/.local/lib` and prints its exact recovery
-path.
-
-## Navigation and search
-
-| Route or key | Result |
+| What you remember | What to type |
 |---|---|
-| `god <service>` | Group map for one service |
-| `god <service> <group>` | Numbered, copy-ready commands |
-| `god <service> <group> <number>` | Explanation for one displayed row |
-| `--help` | Titles and summaries at the current scope |
-| `--details` | Full explanations at the current scope |
-| `--tree` | Compact hierarchy |
-| `--tree --full` | Hierarchy including native command lines |
-| `--keys` | Navigation keys available at the current scope |
-| `q` or `-q` | Smart search globally or inside a service/group |
-| `--quiet` | Suppress decorative home artwork; accepted anywhere |
+| The service | `god mongo` |
+| The service and subject | `god k8s describe` |
+| A few words | `god q "unavailable leader"` |
+| A regular expression | `god q --regex 'offset\|lag'` |
+| Everything below a route | `god kafka native --tree --full` |
 
-Examples:
+Search is case-insensitive and checks command titles, descriptions, native syntax, parameters, options, and notes.
 
-```bash
-god q consumer lag
-god kafka q "describe topic"
-god q --any consumer group
-god q --all consumer group
-god q --exact 'active members'
-god q --regex 'offset|lag'
-god kafka q "publish message" --tree --full
-god --keys
-god --version
-```
+## What is included
 
-View keys work at every meaningful scope. For example, `god --tree`, `god mongo --tree`, and `god mongo replica --tree --full` widen the same view. Row numbers are contextual positions in the currently displayed group; they can change when catalog records are reordered and are not permanent command IDs.
+| Area | Start here |
+|---|---|
+| AWS identity and Route 53 | `god aws` |
+| Elasticsearch | `god elasticsearch` |
+| Host, CPU, memory, disk, and processes | `god general` |
+| Kubernetes | `god k8s` |
+| Kafka | `god kafka` |
+| MongoDB | `god mongo` |
+| Networking, DNS, HTTP, and SSH | `god network` |
 
-`--quiet` is deliberately distinct from search: only the full token `--quiet` changes decoration;
-`-q` continues to mean query. Set `NO_COLOR` to disable ANSI color authoritatively, including when
-`GOD_COLOR=always`; the plain logo still appears for a bare `god` on a TTY unless `--quiet` is used.
+The catalog is deliberately curated around common operational work rather than every flag in every manual. Each service has a `native` group when you need the installed tool's full help.
 
-## How It Works
+## How it works
 
 ```text
-BASH_GOD.sh                  sourced entry point
-god                          direct executable
-bash_god/
-  core.sh                    routing and initialization
-  catalog.sh                 catalog discovery and validation
-  art.sh                     pre-rendered, bare-TTY-only identity
-  render.sh                  normal terminal views
-  search.sh                  ranked text and regex search
-  tree.sh                    hierarchy views
-  catalog/
-    <service>/service.god    one catalog per service
-  tests/smoke.sh             non-operational verification
+god / BASH_GOD.sh
+        │
+        ▼
+routing · search · rendering · tree views
+        │
+        ▼
+bash_god/catalog/<service>/service.god
 ```
 
-The service directory becomes its route automatically. For example, `catalog/mongo/service.god` becomes `god mongo`. Help, search, trees, details, and numbered rows all read the same records, so there is no second command registry to maintain. `.god` files are parsed as inert text and are never sourced or evaluated.
+Every service owns one plain-text catalog. The same records power browsing, search, help, details, numbered explanations, and tree views, so there is no second command registry to maintain.
 
-## Add Knowledge
+Catalog files are parsed as data. They are never sourced, evaluated, or passed to a native CLI.
 
-### Add one command
+## Add your own command
 
-Open the service's single catalog, find the relevant `@group`, and paste a command record beneath related entries. For example, add this under the `resources` group in `bash_god/catalog/general/service.god`:
+Open `bash_god/catalog/<service>/service.god`, find the appropriate `@group`, and add one record:
 
 ```text
-@command Show filesystem inode usage
+@command Check the MongoDB service status
 @mode LOCAL
 @description
-Shows inode consumption for mounted filesystems when disk space appears available but file creation fails.
+Shows whether the local MongoDB systemd unit is running and displays recent status information.
 @run
-df -ih
+systemctl status mongod
 @end
 ```
 
-Then preview and search it without executing `df`:
+That one record automatically appears in group views, help, details, trees, numbered explanations, and search. A normal catalog change requires no dispatcher code.
+
+Preview it without executing the native command:
 
 ```bash
-GOD_COLOR=never ./god general resources
-GOD_COLOR=never ./god general resources q "inode"
+./god mongo service
+./god mongo service q "service status"
 ./bash_god/tests/smoke.sh
 ```
 
-Read-only records need no risk field. Add `@risk WRITE`, `@risk WARN`, or `@risk DELETE` when the native command changes state, has high operational impact, or removes something.
+See the [catalog contribution guide](bash_god/AGENTS.md) for parameters, optional flags, risk markers, new groups, and new services.
 
-### Add one service
+## Safety
 
-Create `bash_god/catalog/redis/service.god`:
-
-```text
-@title Redis commands
-
-@description
-Curated Redis command knowledge. BASH_GOD displays these commands and never executes them.
-
-@group health
-
-@command Ping a Redis server
-@mode MODERN
-@description
-Checks whether a Redis server accepts a basic request.
-@run
-redis-cli -h <host> -p <port> PING
-@end
-```
-
-It is automatically available as `god redis`; no dispatcher edit is needed. See [the contribution guide](bash_god/AGENTS.md) for the complete catalog grammar, parameter format, authoring rules, and contributor checklist.
-
-## Safety and Secrets
-
-- Catalog commands are display-only. Verification renders them but never runs them.
-- Replace every `<placeholder>` and review the complete command before copying it into a shell.
-- `WRITE`, `WARN`, and `DELETE` labels describe the native command's impact; they are not execution controls.
-- Never commit passwords, tokens, private keys, authenticated URIs, decrypted values, or production payloads.
-- Use placeholders for environment-specific values and keep credential-bearing configuration outside the catalog.
-
-Once copied, a command is outside BASH_GOD. Your native tool, identity, context, and environment determine what it will do.
+- BASH_GOD displays catalog commands; it does not execute them.
+- Replace every `<placeholder>` before copying.
+- `WRITE`, `WARN`, and `DELETE` describe the native command's impact.
+- Never put credentials, tokens, private keys, authenticated URIs, or production payloads in a catalog.
+- Once copied, a command is governed by the native tool, your identity, and your current environment.
 
 ## Verification
 
-Run the non-operational checks from the repository root:
+The test suite renders catalog knowledge but never runs the displayed native commands:
 
 ```bash
-bash -n BASH_GOD.sh god bash_god/core.sh bash_god/catalog.sh bash_god/art.sh bash_god/render.sh bash_god/search.sh bash_god/tree.sh bash_god/tests/smoke.sh
-zsh -n BASH_GOD.sh god bash_god/core.sh bash_god/catalog.sh bash_god/art.sh bash_god/render.sh bash_god/search.sh bash_god/tree.sh bash_god/tests/smoke.sh
+bash -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/smoke.sh
+zsh -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/smoke.sh
 ./bash_god/tests/smoke.sh
-git diff --check
 ```
 
-If `shellcheck` is already installed, it is also useful. BASH_GOD does not require or install it.
+## Limitations
 
-## Troubleshooting
+- The catalog is intentionally useful rather than exhaustive.
+- Search is ranked word matching, not an embedding or conversational model.
+- Native flags and behavior can vary by installed version and environment.
+- Homebrew formulae and APT repositories are not published yet.
 
-- **`god: command not found` after cloning:** run `source ./BASH_GOD.sh`, or use `./god` directly.
-- **Unknown service or group:** run `god` or `god <service>` and use the displayed exact route; capitalization does not matter.
-- **Search is too narrow:** try `god q --any <words>` or `god q --regex '<pattern>'`.
-- **A native command fails:** open the service's `native` group and check the installed tool's help. BASH_GOD displays commands but does not test them against your environment.
-- **Unwanted terminal color:** prefix a command with `GOD_COLOR=never`, or set `NO_COLOR`. When
-  `NO_COLOR` is present it wins even over `GOD_COLOR=always`.
-- **Unwanted home logo:** add `--quiet` anywhere, such as `god --quiet`. Redirects and pipes suppress
-  it automatically.
-- **Catalog validation fails:** compare the record with [the contribution guide](bash_god/AGENTS.md), especially required fields and the one-line `@run` rule.
+## Documentation
 
-## Limitations / Risks
-
-- The catalog is intentionally incomplete and favors common operational memory.
-- Smart search is ranked word matching, not an embedding or conversational model.
-- Native flags and output can differ between tool versions and environments.
-- Contextual row numbers may move when records are added or reordered.
-- BASH_GOD cannot make a copied command safe after it leaves the display layer.
-
-## Packaging Status
-
-The CLI-only GitHub Release archive, installer, and both checksums support direct Linux/macOS
-installation. Homebrew formulae and APT repositories are not published yet.
+- [Add or change catalog knowledge](bash_god/AGENTS.md)
+- [Knowledge-base architecture](bash_god/docs/architecture/bash-god-knowledge-base-architecture.md)
+- [Build, verify, and publish runtime packages](packaging/README.md)
 
 ## License
 
-BASH_GOD is released under the [MIT License](LICENSE). In practical terms, you may use, copy, modify, distribute, and sell the software, including commercially, as long as the copyright and license notice remain. The software is provided without warranty.
+BASH_GOD is available under the [MIT License](LICENSE). Use it, modify it, and share it—including commercially—while retaining the copyright and license notice. It is provided without warranty.
