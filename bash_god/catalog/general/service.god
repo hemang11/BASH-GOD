@@ -68,6 +68,33 @@ env | sort
 Environment variables can contain credentials and tokens; review the output before copying or sharing it.
 @end
 
+@command Switch to another user and keep the current environment
+@mode LOCAL
+@description
+Starts a shell as another local user without resetting the exported environment, so variables set in the current session stay visible.
+@run
+sudo -u <target_user> -E bash
+@params
+-u | <target_user> | Local account that will own the new shell
+-E | flag | Preserve the caller's exported environment instead of resetting it
+bash | non-login shell | Avoid a login shell, which would re-read the target user's profile and discard the environment
+@notes
+sudoers enforces env_reset by default, so -E keeps only variables allowed by an env_keep rule; adding one such as Defaults env_keep += "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN" in a file under /etc/sudoers.d is what lets those variables survive.
+@end
+
+@command Switch to another user with a clean login shell
+@mode LOCAL
+@description
+Starts a full login shell as another local user, reading that user's profile and discarding variables exported before the switch.
+@run
+sudo su - <target_user>
+@params
+su - | login shell | Reset the environment and working directory to the target user's login defaults
+<target_user> | ec2-user | Local account whose login shell will start
+@notes
+The leading dash is why exported variables disappear after the switch; use the environment-preserving form when the current session's variables must survive.
+@end
+
 
 @group resources
 

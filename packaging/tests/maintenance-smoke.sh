@@ -73,20 +73,23 @@ else
   fail 'offline update checks fail silently'
 fi
 
+newer_version="${version%.*}.$(( ${version##*.} + 1 ))"
+
 update_output="$(bash -c '
   . "$1"
+  fixture_latest="$3"
   _god_maintenance_is_managed() { return 0; }
   _god_maintenance_cache_is_fresh() { return 1; }
-  _god_maintenance_fetch_latest_version() { printf "0.0.1.4\n"; }
+  _god_maintenance_fetch_latest_version() { printf "%s\n" "$fixture_latest"; }
   _god_maintenance_defer_check() { :; }
   _god_maintenance_menu() { _god_maintenance_menu_choice=0; }
   _god_maintenance_install_update() { printf "installed:%s\n" "$1"; }
   status=0
   _god_maintenance_check "$2" || status=$?
   printf "status:%s\n" "$status"
-' _ "$maintenance" "$version")"
-if contains "$update_output" "BASH_GOD 0.0.1.4 is available; you have $version." && \
-   contains "$update_output" 'installed:0.0.1.4' && \
+' _ "$maintenance" "$version" "$newer_version")"
+if contains "$update_output" "BASH_GOD $newer_version is available; you have $version." && \
+   contains "$update_output" "installed:$newer_version" && \
    contains "$update_output" 'status:10'; then
   pass 'accepted update installs only the newer release and asks for a fresh invocation'
 else
