@@ -22,6 +22,101 @@ _god_maintenance_cleanup() {
   fi
 }
 
+_god_maintenance_style_init() {
+  local locale_name color_mode
+
+  locale_name="${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"
+  color_mode="${GOD_COLOR:-auto}"
+
+  case "$locale_name" in
+    *UTF-8*|*UTF8*|*utf-8*|*utf8*)
+      _god_style_top_left='╭'
+      _god_style_top_right='╮'
+      _god_style_bottom_left='╰'
+      _god_style_bottom_right='╯'
+      _god_style_vertical='│'
+      _god_style_horizontal='─'
+      _god_style_bullet='•'
+      _god_style_marker='❯'
+      _god_style_keys='↑/↓ or j/k to move · enter to confirm'
+      ;;
+    *)
+      _god_style_top_left='+'
+      _god_style_top_right='+'
+      _god_style_bottom_left='+'
+      _god_style_bottom_right='+'
+      _god_style_vertical='|'
+      _god_style_horizontal='-'
+      _god_style_bullet='-'
+      _god_style_marker='>'
+      _god_style_keys='up/down or j/k to move, enter to confirm'
+      ;;
+  esac
+
+  _god_style_reset=''
+  _god_style_bold=''
+  _god_style_dim=''
+  _god_style_brand=''
+  _god_style_accent=''
+  _god_style_warning=''
+
+  if [ -z "${NO_COLOR+x}" ]; then
+    if [ "$color_mode" = always ] || {
+      [ "$color_mode" != never ] &&
+      [ "${TERM:-}" != dumb ] &&
+      [ -t 1 ]
+    }; then
+      _god_style_reset="$(printf '\033[0m')"
+      _god_style_bold="$(printf '\033[1m')"
+      _god_style_dim="$(printf '\033[2m')"
+      _god_style_brand="$(printf '\033[1;35m')"
+      _god_style_accent="$(printf '\033[1;36m')"
+      _god_style_warning="$(printf '\033[1;33m')"
+    fi
+  fi
+}
+
+_god_maintenance_repeat() {
+  local character count output
+
+  character=$1
+  count=$2
+  output=''
+  while [ "$count" -gt 0 ]; do
+    output="${output}${character}"
+    count=$((count - 1))
+  done
+  printf '%s' "$output"
+}
+
+_god_maintenance_banner() {
+  local title subtitle
+
+  title=$1
+  subtitle=$2
+
+  printf '\n%s%s' "$_god_style_brand" "$_god_style_top_left"
+  _god_maintenance_repeat "$_god_style_horizontal" 72
+  printf '%s%s\n' "$_god_style_top_right" "$_god_style_reset"
+  printf '%s%s%s %-70.70s %s%s\n' "$_god_style_brand" "$_god_style_vertical" \
+    "$_god_style_reset$_god_style_bold" "$title" "$_god_style_brand$_god_style_vertical" "$_god_style_reset"
+  if [ -n "$subtitle" ]; then
+    printf '%s%s%s %-70.70s %s%s\n' "$_god_style_brand" "$_god_style_vertical" \
+      "$_god_style_reset$_god_style_dim" "$subtitle" "$_god_style_brand$_god_style_vertical" "$_god_style_reset"
+  fi
+  printf '%s%s' "$_god_style_brand" "$_god_style_bottom_left"
+  _god_maintenance_repeat "$_god_style_horizontal" 72
+  printf '%s%s\n' "$_god_style_bottom_right" "$_god_style_reset"
+}
+
+_god_maintenance_section() {
+  printf '\n%s%s%s\n\n' "$_god_style_bold" "$1" "$_god_style_reset"
+}
+
+_god_maintenance_path_row() {
+  printf '  %s%s%s %s\n' "$_god_style_dim" "$_god_style_bullet" "$_god_style_reset" "$1"
+}
+
 _god_maintenance_version_is_valid() {
   case "$1" in
     ''|.*|*.|*..*|*[!0-9.]*) return 1 ;;
@@ -188,9 +283,9 @@ _god_maintenance_is_managed() {
 _god_maintenance_cache_ttl() {
   local ttl
 
-  ttl=${GOD_UPDATE_CHECK_TTL:-86400}
+  ttl=${GOD_UPDATE_CHECK_TTL:-30}
   case "$ttl" in
-    ''|*[!0-9]*) ttl=86400 ;;
+    ''|*[!0-9]*) ttl=30 ;;
   esac
   printf '%s\n' "$ttl"
 }
@@ -228,15 +323,16 @@ _god_maintenance_has_tty() {
 }
 
 _god_maintenance_menu() {
-  local first second selected marker key rest
+  local first first_hint second second_hint selected danger key rest
+  local width first_style second_style
 
   first=$1
-  second=$2
-  selected=${3:-0}
-  marker='>'
-  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
-    *UTF-8*|*UTF8*) marker='❯' ;;
-  esac
+  first_hint=$2
+  second=$3
+  second_hint=$4
+  selected=${5:-0}
+  danger=${6:-0}
+  width=22
 
   if ! _god_maintenance_has_tty; then
     printf 'An interactive terminal is required; nothing was changed.\n' >&2
@@ -257,13 +353,22 @@ _god_maintenance_menu() {
     return 0
   fi
 
+  first_style=$_god_style_accent
+  second_style=$_god_style_accent
+  [ "$danger" -eq 1 ] && second_style=$_god_style_warning
+
   printf '\n'
   while :; do
     if [ "$selected" -eq 0 ]; then
-      printf '\r\033[2K  %s %s\n\r\033[2K    %s\n' "$marker" "$first" "$second"
+      printf '\r\033[2K  %s%s %-*s%s %s%s%s\n' "$first_style" "$_god_style_marker" \
+        "$width" "$first" "$_god_style_reset" "$_god_style_dim" "$first_hint" "$_god_style_reset"
+      printf '\r\033[2K    %s%-*s %s%s\n' "$_god_style_dim" "$width" "$second" "$second_hint" "$_god_style_reset"
     else
-      printf '\r\033[2K    %s\n\r\033[2K  %s %s\n' "$first" "$marker" "$second"
+      printf '\r\033[2K    %s%-*s %s%s\n' "$_god_style_dim" "$width" "$first" "$first_hint" "$_god_style_reset"
+      printf '\r\033[2K  %s%s %-*s%s %s%s%s\n' "$second_style" "$_god_style_marker" \
+        "$width" "$second" "$_god_style_reset" "$_god_style_dim" "$second_hint" "$_god_style_reset"
     fi
+    printf '\r\033[2K\n\r\033[2K  %s%s%s\n' "$_god_style_dim" "$_god_style_keys" "$_god_style_reset"
     IFS= read -r -s -n 1 key || {
       _god_maintenance_menu_choice=0
       printf '\n'
@@ -286,7 +391,7 @@ _god_maintenance_menu() {
         ;;
       *) continue ;;
     esac
-    printf '\033[2A'
+    printf '\033[4A'
   done
 }
 
@@ -350,15 +455,19 @@ _god_maintenance_check() {
     return 0
   fi
 
-  printf '\nBASH_GOD %s is available; you have %s.\n' "$latest" "$current"
-  _god_maintenance_menu "Update to $latest" 'Not now' 0
+  _god_maintenance_banner 'UPDATE AVAILABLE' \
+    "$(printf 'BASH_GOD %s is available; you have %s.' "$latest" "$current")"
+  _god_maintenance_menu \
+    "Update to $latest" 'Download, verify checksums, and replace the runtime' \
+    'Not now' "Keep $current and ask again later" 0
   if [ "$_god_maintenance_menu_choice" -ne 0 ]; then
     _god_maintenance_defer_check "$(_god_maintenance_cache_ttl)"
     return 0
   fi
   _god_maintenance_install_update "$latest"
   _god_maintenance_defer_check "$(_god_maintenance_cache_ttl)"
-  printf '\nBASH_GOD was updated to %s. Run god again to load the new version.\n' "$latest"
+  printf '\n%sBASH_GOD was updated to %s.%s %sRun god again to load the new version.%s\n' \
+    "$_god_style_bold" "$latest" "$_god_style_reset" "$_god_style_dim" "$_god_style_reset"
   return 10
 }
 
@@ -404,22 +513,26 @@ _god_maintenance_uninstall() {
     return 2
   fi
 
-  printf '\nThis permanently removes BASH_GOD %s and all BASH_GOD-owned data.\n\n' "$current"
-  printf '  %s\n' "$_god_maintenance_launcher"
-  printf '  %s\n' "$_god_maintenance_runtime"
-  printf '  %s\n' "$_god_maintenance_prefix/lib/bash-god.backup-*"
-  printf '  %s\n' "$_god_maintenance_license_dir"
-  printf '  %s\n' "$_god_maintenance_metadata_dir"
-  printf '  %s\n' "$_god_maintenance_config_dir"
-  printf '  %s\n' "$_god_maintenance_cache_dir"
-  printf '  %s\n' "$_god_maintenance_state_dir"
+  _god_maintenance_banner "$(printf 'REMOVE BASH_GOD %s' "$current")" \
+    'Permanently deletes the launcher, runtime, and every path below.'
+  _god_maintenance_section 'PATHS TO REMOVE'
+  _god_maintenance_path_row "$_god_maintenance_launcher"
+  _god_maintenance_path_row "$_god_maintenance_runtime"
+  _god_maintenance_path_row "$_god_maintenance_prefix/lib/bash-god.backup-*"
+  _god_maintenance_path_row "$_god_maintenance_license_dir"
+  _god_maintenance_path_row "$_god_maintenance_metadata_dir"
+  _god_maintenance_path_row "$_god_maintenance_config_dir"
+  _god_maintenance_path_row "$_god_maintenance_cache_dir"
+  _god_maintenance_path_row "$_god_maintenance_state_dir"
   if [ "$_god_maintenance_data_dir" != "$_god_maintenance_metadata_dir" ]; then
-    printf '  %s\n' "$_god_maintenance_data_dir"
+    _god_maintenance_path_row "$_god_maintenance_data_dir"
   fi
 
-  _god_maintenance_menu 'Cancel' 'Uninstall everything' 0
+  _god_maintenance_menu \
+    'Cancel' 'Leave this installation exactly as it is' \
+    'Uninstall everything' 'Delete every path listed above' 0 1
   if [ "$_god_maintenance_menu_choice" -ne 1 ]; then
-    printf 'Uninstall cancelled. Nothing was changed.\n'
+    printf '%sUninstall cancelled. Nothing was changed.%s\n' "$_god_style_dim" "$_god_style_reset"
     return 0
   fi
 
@@ -440,7 +553,7 @@ _god_maintenance_uninstall() {
   rmdir "$_god_maintenance_prefix/bin" 2>/dev/null || true
   rmdir "$_god_maintenance_prefix/lib" 2>/dev/null || true
   rmdir "$_god_maintenance_prefix" 2>/dev/null || true
-  printf '\nBASH_GOD was completely removed.\n'
+  printf '\n%sBASH_GOD was completely removed.%s\n' "$_god_style_bold" "$_god_style_reset"
 }
 
 _god_maintenance_main() {
@@ -450,6 +563,7 @@ _god_maintenance_main() {
   current=${2:-}
   _god_maintenance_version_is_valid "$current" || _god_maintenance_die 'current version is invalid'
   _god_maintenance_init_paths
+  _god_maintenance_style_init
   trap '_god_maintenance_cleanup' EXIT
   trap 'exit 130' HUP INT TERM
   case "$action" in

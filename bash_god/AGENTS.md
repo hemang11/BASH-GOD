@@ -122,6 +122,12 @@ text came from a description, parameter, optional flag, or note.
 - Treat `NO_COLOR` as authoritative: when it is present, emit no ANSI sequences even if
   `GOD_COLOR=always`. On a TTY, this leaves the uncolored logo unless `--quiet` is also present.
 - Keep sourcing silent. Loading `BASH_GOD.sh` or `art.sh` must never print the logo or other output.
+- Render the update prompt and the uninstall confirmation as banner panels with the same box glyphs,
+  brand colour, and dim secondary text used by catalog views. `maintenance.sh` runs in its own Bash
+  process, so it carries a self-contained style block instead of sourcing `core.sh`; keep the two
+  colour contracts in step, including `NO_COLOR`, `GOD_COLOR`, `TERM=dumb`, and the non-TTY fallback.
+- Mark a destructive menu option with the warning colour, and keep a plain `[y/N]` prompt for
+  `TERM=dumb` terminals.
 
 ## Choose the Correct Catalog and Group
 

@@ -89,6 +89,7 @@ update_output="$(bash -c '
   printf "status:%s\n" "$status"
 ' _ "$maintenance" "$version" "$newer_version")"
 if contains "$update_output" "BASH_GOD $newer_version is available; you have $version." && \
+   contains "$update_output" 'UPDATE AVAILABLE' && \
    contains "$update_output" "installed:$newer_version" && \
    contains "$update_output" 'status:10'; then
   pass 'accepted update installs only the newer release and asks for a fresh invocation'
@@ -150,6 +151,8 @@ cancel_output="$(HOME="$test_home" bash -c '
   _god_maintenance_main uninstall "$2"
 ' _ "$prefix/lib/bash-god/bash_god/maintenance.sh" "$version")"
 if contains "$cancel_output" 'Uninstall cancelled. Nothing was changed.' && \
+   contains "$cancel_output" "REMOVE BASH_GOD $version" && \
+   contains "$cancel_output" 'PATHS TO REMOVE' && \
    [ -x "$prefix/bin/god" ] && [ -d "$test_home/.config/bash-god" ]; then
   pass 'uninstall defaults to cancellation without changing files'
 else
