@@ -283,9 +283,9 @@ _god_maintenance_is_managed() {
 _god_maintenance_cache_ttl() {
   local ttl
 
-  ttl=${GOD_UPDATE_CHECK_TTL:-30}
+  ttl=${GOD_UPDATE_CHECK_TTL:-86400}
   case "$ttl" in
-    ''|*[!0-9]*) ttl=30 ;;
+    ''|*[!0-9]*) ttl=86400 ;;
   esac
   printf '%s\n' "$ttl"
 }

@@ -201,8 +201,8 @@ _bash_god_bootstrap_seed_update_cache() {
   mkdir -p "$cache_dir" 2>/dev/null || return 0
   temporary="$(mktemp "$cache_dir/.next-update-check.XXXXXX" 2>/dev/null)" || return 0
   now=$(date +%s) || { command rm -f -- "$temporary"; return 0; }
-  ttl=${GOD_UPDATE_CHECK_TTL:-30}
-  case "$ttl" in ''|*[!0-9]*) ttl=30 ;; esac
+  ttl=${GOD_UPDATE_CHECK_TTL:-86400}
+  case "$ttl" in ''|*[!0-9]*) ttl=86400 ;; esac
   printf '%s\n' "$((now + ttl))" > "$temporary"
   chmod 0600 "$temporary" 2>/dev/null || true
   mv -f "$temporary" "$cache_dir/next-update-check" 2>/dev/null || command rm -f -- "$temporary"

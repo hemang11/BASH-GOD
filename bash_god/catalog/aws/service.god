@@ -74,16 +74,6 @@ aws ssm start-session --target <instance_id> --document-name AWS-StartInteractiv
 Enabling Run As support in Session Manager preferences achieves the same landing user for every session without repeating this document.
 @end
 
-@command List active Session Manager sessions
-@mode MODERN
-@description
-Lists Systems Manager sessions currently connected in the region, including the target instance and the principal that opened each one.
-@run
-aws ssm describe-sessions --state Active --output table
-@params
---state | Active | Show connected sessions rather than historical ones
-@end
-
 
 @group imds
 
@@ -123,52 +113,26 @@ The credential chain prefers environment variables, then ~/.aws/credentials, the
 
 @group route53
 
-@command List private Route 53 hosted zones
+@command List Route 53 hosted zones
 @mode MODERN
 @description
-Lists private hosted-zone IDs and DNS names visible through the current AWS account identity.
+Lists every hosted-zone ID and DNS name visible to the current AWS account identity.
 @run
-aws route53 list-hosted-zones --query 'HostedZones[?Config.PrivateZone==`true`].[Id,Name]' --output table
-@params
---query | private zones | Keep only hosted zones whose PrivateZone flag is true
---output | table | Render zone IDs and names as a table
+aws route53 list-hosted-zones --output table
+@optional
+--query | HostedZones[?Config.PrivateZone] | Narrow the table to private zones when an account holds both kinds
 @end
 
-@command List private hosted zones associated with one VPC
+@command List the records in a hosted zone
 @mode MODERN
 @description
-Lists private hosted zones associated with a selected VPC, including zones owned by another account when visible.
+Lists the record names, types, and values held in one Route 53 hosted zone.
 @run
-aws route53 list-hosted-zones-by-vpc --vpc-id <vpc_id> --vpc-region <aws_region> --query 'HostedZoneSummaries[].[HostedZoneId,Name,Owner.OwningAccount]' --output table
+aws route53 list-resource-record-sets --hosted-zone-id <hosted_zone_id> --output table
 @params
---vpc-id | <vpc_id> | VPC whose associated private zones should be listed
---vpc-region | <aws_region> | AWS region containing the VPC
-@end
-
-@command List address and canonical-name records in a hosted zone
-@mode MODERN
-@description
-Lists A, AAAA, and CNAME record names, values, and alias targets from one Route 53 hosted zone.
-@run
-aws route53 list-resource-record-sets --hosted-zone-id <hosted_zone_id> --query "ResourceRecordSets[?Type=='A' || Type=='AAAA' || Type=='CNAME'].[Name,Type,ResourceRecords[0].Value,AliasTarget.DNSName]" --output table
-@params
---hosted-zone-id | <hosted_zone_id> | Route 53 hosted-zone identifier
---query | A, AAAA, and CNAME | Keep hostname-bearing record types and their first value or alias target
+--hosted-zone-id | <hosted_zone_id> | Route 53 hosted-zone identifier from the zone list
 @notes
-Route 53 normally returns fully qualified DNS names with a trailing dot.
-@end
-
-@command Find Route 53 records case-insensitively
-@mode MODERN
-@description
-Searches the names, types, values, and alias targets of A, AAAA, and CNAME records without changing Route 53.
-@run
-aws route53 list-resource-record-sets --hosted-zone-id <hosted_zone_id> --query "ResourceRecordSets[?Type=='A' || Type=='AAAA' || Type=='CNAME'].[Name,Type,ResourceRecords[0].Value,AliasTarget.DNSName]" --output text | grep -i -- '<search_text>'
-@params
---hosted-zone-id | <hosted_zone_id> | Route 53 hosted-zone identifier
-TEXT | <search_text> | Partial case-insensitive hostname or value to find
-@notes
-Repeat this read-only command for each relevant private hosted zone.
+Route 53 returns fully qualified names with a trailing dot. Pipe to grep when hunting one hostname.
 @end
 
 

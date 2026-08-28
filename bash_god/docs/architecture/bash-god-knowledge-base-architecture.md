@@ -1,6 +1,6 @@
 # BASH_GOD Knowledge Base Architecture
 
-**Status:** Implemented in BASH_GOD 0.0.1.4
+**Status:** Implemented in BASH_GOD 0.0.1.5
 
 ## Context / Problem
 
@@ -306,7 +306,7 @@ with examples for the current scope. The routing invariant is that `--help`, `--
 changing the selected view; `-q` remains the query route. `--full` always modifies `--tree`;
 `<number>` always requires numbered group rows. `god --version`
 and root-level `god -v` print only
-`BASH_GOD 0.0.1.4` and `License: MIT`; they do not report the host shell version.
+`BASH_GOD 0.0.1.5` and `License: MIT`; they do not report the host shell version.
 
 - `0`: successful display or search with matches.
 - `1`: valid search with no matches.
