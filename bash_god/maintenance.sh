@@ -11,6 +11,14 @@ fi
 _god_maintenance_repository='hemang11/BASH-GOD'
 _god_maintenance_download_dir=''
 
+# The interactive picker is shared with the catalog search views.
+_god_maintenance_dir="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)" || \
+  _god_maintenance_dir=''
+if [ -n "$_god_maintenance_dir" ] && [ -r "$_god_maintenance_dir/menu.sh" ]; then
+  # shellcheck source=menu.sh
+  . "$_god_maintenance_dir/menu.sh" || exit 1
+fi
+
 _god_maintenance_die() {
   printf 'BASH_GOD maintenance: %s\n' "$1" >&2
   exit 1
@@ -322,9 +330,10 @@ _god_maintenance_has_tty() {
   [ -t 0 ] && [ -t 1 ]
 }
 
+# Two-choice wrapper over the shared picker. The name is part of the test
+# surface: packaging/tests/maintenance-smoke.sh stubs this exact function.
 _god_maintenance_menu() {
-  local first first_hint second second_hint selected danger key rest
-  local width first_style second_style
+  local first first_hint second second_hint selected danger rows tab
 
   first=$1
   first_hint=$2
@@ -332,67 +341,26 @@ _god_maintenance_menu() {
   second_hint=$4
   selected=${5:-0}
   danger=${6:-0}
-  width=22
 
-  if ! _god_maintenance_has_tty; then
+  tab="$(printf '\t')"
+  rows="${first}${tab}${first_hint}${tab}"
+  rows="${rows}
+${second}${tab}${second_hint}${tab}"
+  [ "$danger" -eq 1 ] && rows="${rows}danger"
+
+  _god_menu_style_init
+  if ! _god_menu_select "$rows" "$((selected + 1))"; then
     printf 'An interactive terminal is required; nothing was changed.\n' >&2
     _god_maintenance_menu_choice=0
     return 0
   fi
 
-  if [ "${TERM:-}" = dumb ]; then
-    if [ "$selected" -eq 0 ]; then
-      printf '%s [Y/n] ' "$first"
-      IFS= read -r key || key=n
-      case "$key" in ''|y|Y|yes|YES|Yes) _god_maintenance_menu_choice=0 ;; *) _god_maintenance_menu_choice=1 ;; esac
-    else
-      printf '%s [y/N] ' "$second"
-      IFS= read -r key || key=n
-      case "$key" in y|Y|yes|YES|Yes) _god_maintenance_menu_choice=1 ;; *) _god_maintenance_menu_choice=0 ;; esac
-    fi
-    return 0
+  if [ "$_god_menu_choice" -lt 0 ]; then
+    _god_maintenance_menu_choice=0
+  else
+    _god_maintenance_menu_choice=$_god_menu_choice
   fi
-
-  first_style=$_god_style_accent
-  second_style=$_god_style_accent
-  [ "$danger" -eq 1 ] && second_style=$_god_style_warning
-
-  printf '\n'
-  while :; do
-    if [ "$selected" -eq 0 ]; then
-      printf '\r\033[2K  %s%s %-*s%s %s%s%s\n' "$first_style" "$_god_style_marker" \
-        "$width" "$first" "$_god_style_reset" "$_god_style_dim" "$first_hint" "$_god_style_reset"
-      printf '\r\033[2K    %s%-*s %s%s\n' "$_god_style_dim" "$width" "$second" "$second_hint" "$_god_style_reset"
-    else
-      printf '\r\033[2K    %s%-*s %s%s\n' "$_god_style_dim" "$width" "$first" "$first_hint" "$_god_style_reset"
-      printf '\r\033[2K  %s%s %-*s%s %s%s%s\n' "$second_style" "$_god_style_marker" \
-        "$width" "$second" "$_god_style_reset" "$_god_style_dim" "$second_hint" "$_god_style_reset"
-    fi
-    printf '\r\033[2K\n\r\033[2K  %s%s%s\n' "$_god_style_dim" "$_god_style_keys" "$_god_style_reset"
-    IFS= read -r -s -n 1 key || {
-      _god_maintenance_menu_choice=0
-      printf '\n'
-      return 0
-    }
-    case "$key" in
-      '')
-        _god_maintenance_menu_choice=$selected
-        printf '\n'
-        return 0
-        ;;
-      k|K) selected=0 ;;
-      j|J) selected=1 ;;
-      "$(printf '\033')")
-        IFS= read -r -s -n 2 rest || rest=''
-        case "$rest" in
-          '[A') selected=0 ;;
-          '[B') selected=1 ;;
-        esac
-        ;;
-      *) continue ;;
-    esac
-    printf '\033[4A'
-  done
+  return 0
 }
 
 _god_maintenance_download() {

@@ -154,7 +154,7 @@ while IFS= read -r _bash_god_install_entry; do
   case "$_bash_god_install_relative" in
     ''|bin/|lib/|lib/bash-god/|lib/bash-god/bash_god/|lib/bash-god/bash_god/catalog/|share/|share/licenses/|share/licenses/bash-god/)
       ;;
-    bin/god|lib/bash-god/god|lib/bash-god/bash_god/art.sh|lib/bash-god/bash_god/catalog.sh|lib/bash-god/bash_god/core.sh|lib/bash-god/bash_god/maintenance.sh|lib/bash-god/bash_god/render.sh|lib/bash-god/bash_god/search.sh|lib/bash-god/bash_god/tree.sh|share/licenses/bash-god/LICENSE)
+    bin/god|lib/bash-god/god|lib/bash-god/bash_god/art.sh|lib/bash-god/bash_god/catalog.sh|lib/bash-god/bash_god/core.sh|lib/bash-god/bash_god/maintenance.sh|lib/bash-god/bash_god/menu.sh|lib/bash-god/bash_god/render.sh|lib/bash-god/bash_god/search.sh|lib/bash-god/bash_god/tree.sh|share/licenses/bash-god/LICENSE)
       ;;
     lib/bash-god/bash_god/catalog/*/)
       _bash_god_install_service="${_bash_god_install_relative#lib/bash-god/bash_god/catalog/}"
@@ -192,6 +192,7 @@ for _bash_god_install_required in \
   lib/bash-god/bash_god/catalog.sh \
   lib/bash-god/bash_god/core.sh \
   lib/bash-god/bash_god/maintenance.sh \
+  lib/bash-god/bash_god/menu.sh \
   lib/bash-god/bash_god/render.sh \
   lib/bash-god/bash_god/search.sh \
   lib/bash-god/bash_god/tree.sh \
