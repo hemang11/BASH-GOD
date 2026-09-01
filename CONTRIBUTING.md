@@ -169,7 +169,7 @@ Every executable catalog declares one connection model:
 ```
 
 - Use `NONE` for local/PATH tools such as general and network. A command may still prompt for a
-  one-off host, but BASH_GOD has no service-wide target to discover.
+  one-off host, but BASH_GOD has no service-wide endpoint to discover.
 - Use `ENDPOINT <port>` for client/server catalogs. During explicit `god SERVICE --resync`, the
   generic engine uses a non-secret `target=host:port` override from
   `~/.config/bash-god/SERVICE.conf` when set; otherwise it may cache a concrete local listener at
@@ -200,7 +200,8 @@ views and never offers the execution picker.
 3. Add a new record with the first verified `@since` for a new syntax.
 4. Add `@until` only when the old syntax is known to stop working.
 5. Join overlapping old/new records with `@intent`; leave disjoint operations independent.
-6. Update `@synced` only when the whole discovery catalog was actually reviewed against that version.
+6. Every discovery catalog must declare `@synced <version>`. Update it only when the whole catalog
+   was actually reviewed against that version; the validator rejects an omitted review baseline.
 
 Compatibility is per command. Never replace it with a service-wide "N commands hidden" decision or
 hide the version information only in a header.

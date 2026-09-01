@@ -212,8 +212,9 @@ Rules:
   `@connection CONTEXT`. `NONE` has no shared target, `ENDPOINT` permits one cached non-secret
   `host:port` candidate, and `CONTEXT` represents client-managed state such as kubeconfig or AWS
   profile/region.
-- An optional top-level `@synced VERSION` records which version the catalog was last verified
-  against. `god --paths` renders it once per service; it never filters or annotates a command row.
+- Every discovery catalog requires one top-level `@synced VERSION` recording the version the catalog
+  was last verified against. `god --paths` renders it once per service; it never filters or annotates
+  a command row.
 - Every `@group NAME` creates an exact navigable group route.
 - Every `@command TITLE` requires `@mode`, non-empty `@description`, and exactly one physical `@run` line.
   In a catalog with `@discover`, every command also requires `@since VERSION`; service-neutral local

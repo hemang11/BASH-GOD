@@ -299,10 +299,10 @@ special-case dispatcher branch.
 | top-level `@description` | Once per file | Concise scope of the entire catalog. Must precede every group. |
 | top-level `@discover` | Optional, once per file | Discovers one installed tool family through `probe`/`root`/`scan`/`version`; mutually exclusive with `@execution PATH`; must precede every group. |
 | top-level `@execution PATH` | Optional, once per file | Opts a multi-tool catalog into the reviewed picker using the caller's PATH; mutually exclusive with `@discover`; must precede every group. |
-| top-level `@connection NONE` | Every executable catalog | Explicitly declares that commands are local or individually parameterized and need no shared service target. |
-| top-level `@connection ENDPOINT <port>` | Every endpoint catalog | Declares a TCP service target and its usual local-listener port; `--resync` may cache a non-secret `host:port` candidate. |
+| top-level `@connection NONE` | Every executable catalog | Explicitly declares that commands are local or individually parameterized and need no shared service endpoint. |
+| top-level `@connection ENDPOINT <port>` | Every endpoint catalog | Declares a TCP service endpoint and its usual local-listener port; `--resync` may cache a non-secret `host:port` candidate. |
 | top-level `@connection CONTEXT` | Every context catalog | Declares a client-managed context such as kubeconfig or AWS profile/region rather than a host:port target. |
-| top-level `@synced <version>` | Optional, once per discovery catalog | Dotted version the catalog was last verified against. `god --paths` renders it once per service; it never filters or annotates individual commands. |
+| top-level `@synced <version>` | Required, once per discovery catalog | Dotted version the catalog was last verified against. `god --paths` renders it once per service; it never filters or annotates individual commands. |
 | `@group <name>` | Yes | Exact navigable group route. |
 | `@command <title>` | Per record | Unique, human-readable operation title within the group. |
 | `@mode <mode>` | Per record | Compatibility/context metadata; see accepted values below. |
@@ -380,7 +380,7 @@ non-executable record marker: service resolution decides whether the rich picker
 Every executable catalog declares exactly one connection model:
 
 - `@connection NONE` is required for local and PATH command catalogs such as general and network.
-  Commands may still prompt for one-off destinations, but no service target is cached.
+  Commands may still prompt for one-off destinations, but no service endpoint is cached.
 - `@connection ENDPOINT <port>` is for Kafka, MongoDB, Elasticsearch, and similar client/server
   catalogs. On explicit `god SERVICE --resync`, the shared engine prefers a non-secret
   `target=host:port` user override in `~/.config/bash-god/SERVICE.conf`; otherwise it may cache one

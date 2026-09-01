@@ -14,6 +14,8 @@ version | <probe> -fsS --connect-timeout 1 --max-time 2 http://localhost:9200/ |
 
 @connection ENDPOINT 9200
 
+@synced 7.17
+
 
 @group service
 

@@ -19,6 +19,8 @@ version | <probe> --version | Reads the selected shell client version without co
 
 @connection ENDPOINT 27017
 
+@synced 4.2
+
 
 @group service
 

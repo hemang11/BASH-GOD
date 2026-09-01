@@ -28,7 +28,7 @@ _god_print_available_services() {
 # whether that resolution is still fresh. PATH-execution services deliberately
 # do not appear because they have no single product directory to report.
 _god_print_discovered_paths() {
-  local catalog_files file service catalog path version synced connection_kind target printed
+  local catalog_files file service catalog path version synced connection_kind target summary printed
 
   if [ -z "$(type -t _god_discover_path 2>/dev/null)" ]; then
     printf 'BASH_GOD: discovery is unavailable in this installation.\n' >&2
@@ -37,7 +37,7 @@ _god_print_discovered_paths() {
 
   catalog_files="$(_god_catalog_files)" || return 2
   printed=1
-  _god_banner 'DISCOVERED PATHS' 'Resolved clients, review versions, and service targets.'
+  _god_banner 'DISCOVERED PATHS' 'Resolved clients and service targets.'
   printf '\n'
 
   while IFS= read -r file; do
@@ -59,15 +59,20 @@ _god_print_discovered_paths() {
     else
       printf '  %s%-16s%s %s\n' "$_GOD_ACCENT" "$service" "$_GOD_RESET" "$path"
     fi
-    printf '  %s%-16s%s CLI version: %s\n' "$_GOD_DIM" '' "$_GOD_RESET" "${version:-unknown}"
     synced="$(_god_catalog_synced "$catalog" 2>/dev/null)"
-    printf '  %s%-16s%s Catalog reviewed through: %s\n' \
-      "$_GOD_DIM" '' "$_GOD_RESET" "${synced:-not recorded}"
+    if [ "${version:-unknown}" = unknown ]; then
+      summary='version unavailable'
+    else
+      summary="v$version"
+    fi
+    summary="$summary · reviewed $synced"
     connection_kind="$(_god_catalog_connection_kind "$catalog")"
     if [ "$connection_kind" = ENDPOINT ]; then
       target="$(_god_discover_target "$service" 2>/dev/null)"
-      printf '  %s%-16s%s Target: %s\n' "$_GOD_DIM" '' "$_GOD_RESET" "${target:-unresolved}"
+      summary="$summary · Target: ${target:-unresolved}"
     fi
+    printf '  %s%-16s%s %s%s%s\n' \
+      "$_GOD_DIM" '' "$_GOD_RESET" "$_GOD_DIM" "$summary" "$_GOD_RESET"
   done <<< "$catalog_files"
 
   if [ "$printed" -eq 1 ]; then

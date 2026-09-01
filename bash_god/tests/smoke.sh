@@ -158,6 +158,7 @@ setup_version_number="$(catalog_entry_number "$kafka_catalog" setup 'Show the in
 setup_tools_number="$(catalog_entry_number "$kafka_catalog" setup 'List installed Kafka command-line tools')"
 
 missing_since_catalog="$smoke_home/missing-since.god"
+missing_synced_catalog="$smoke_home/missing-synced.god"
 display_only_catalog="$smoke_home/display-only.god"
 printf '%s\n' \
   '@title Executable fixture' \
@@ -167,6 +168,7 @@ printf '%s\n' \
   'probe | fixture.sh | Fixture probe' \
   'root | /tmp | Fixture root' \
   '@connection NONE' \
+  '@synced 1.0' \
   '@group demo' \
   '@command Missing compatibility floor' \
   '@mode LOCAL' \
@@ -175,6 +177,23 @@ printf '%s\n' \
   '@run' \
   'printf fixture' \
   '@end' > "$missing_since_catalog"
+printf '%s\n' \
+  '@title Executable fixture' \
+  '@description' \
+  'Validator fixture.' \
+  '@discover' \
+  'probe | fixture.sh | Fixture probe' \
+  'root | /tmp | Fixture root' \
+  '@connection NONE' \
+  '@group demo' \
+  '@command Reviewed fixture' \
+  '@mode LOCAL' \
+  '@since 0.0' \
+  '@description' \
+  'Deliberately omits the required service review marker.' \
+  '@run' \
+  'printf fixture' \
+  '@end' > "$missing_synced_catalog"
 printf '%s\n' \
   '@title Display-only fixture' \
   '@description' \
@@ -189,6 +208,8 @@ printf '%s\n' \
   '@end' > "$display_only_catalog"
 missing_since_status=0
 missing_since_output="$(bash -c '. "$1"; _god_validate_catalog "$2"' _ "$catalog_module" "$missing_since_catalog" 2>&1)" || missing_since_status=$?
+missing_synced_status=0
+missing_synced_output="$(bash -c '. "$1"; _god_validate_catalog "$2"' _ "$catalog_module" "$missing_synced_catalog" 2>&1)" || missing_synced_status=$?
 display_only_status=0
 bash -c '. "$1"; _god_validate_catalog "$2"' _ "$catalog_module" "$display_only_catalog" >/dev/null 2>&1 || display_only_status=$?
 if [ "$kafka_since_count" -eq "$kafka_command_count" ] && [ "$missing_since_status" -ne 0 ] && \
@@ -197,6 +218,13 @@ if [ "$kafka_since_count" -eq "$kafka_command_count" ] && [ "$missing_since_stat
   pass 'every executable-service command requires an explicit compatibility floor'
 else
   fail 'every executable-service command requires an explicit compatibility floor'
+fi
+
+if [ "$missing_synced_status" -ne 0 ] && \
+   contains "$missing_synced_output" 'discovery catalog is missing @synced'; then
+  pass 'every discovery catalog requires an explicit review version'
+else
+  fail 'every discovery catalog requires an explicit review version'
 fi
 
 connection_contract_output="$(bash -c '
@@ -233,7 +261,7 @@ else
 fi
 
 if contains "$paths_output" 'DISCOVERED PATHS' && \
-   contains "$paths_output" 'Resolved clients, review versions, and service targets.' && \
+   contains "$paths_output" 'Resolved clients and service targets.' && \
    not_contains "$paths_output" '@discover'; then
   pass 'resolved-path view uses operator language instead of catalog grammar'
 else
@@ -251,9 +279,7 @@ paths_metadata_output="$(GOD_COLOR=never bash -c '
   _god_print_discovered_paths
 ' _ "$project_dir" "$kafka_catalog")"
 if contains "$paths_metadata_output" 'kafka            /fixtures/kafka' && \
-   contains "$paths_metadata_output" 'CLI version: 3.9.2' && \
-   contains "$paths_metadata_output" 'Catalog reviewed through: 3.9' && \
-   contains "$paths_metadata_output" 'Target: 10.24.12.7:9092' && \
+   contains "$paths_metadata_output" 'v3.9.2 · reviewed 3.9 · Target: 10.24.12.7:9092' && \
    not_contains "$paths_metadata_output" 'not verified on'; then
   pass 'paths owns catalog review and resolved endpoint context'
 else
@@ -280,6 +306,7 @@ printf '%s\n' \
   "root | $target_fixture_bin | Fixture client directory" \
   'version | fixture.sh --version --bootstrap-server localhost:9092 | Reads the endpoint through the selected fixture client' \
   '@connection ENDPOINT 9092' \
+  '@synced 1.0' \
   '@group demo' \
   '@command List through the default endpoint' \
   '@mode MODERN' \

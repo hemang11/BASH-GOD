@@ -441,6 +441,7 @@ _god_validate_catalog() {
       else if (!catalog_description_has_content) fail("empty catalog @description")
       if (seen_discover && !discover_probe_count) fail("@discover has no probe row")
       if (seen_discover && !discover_root) fail("@discover has no root row")
+      if (seen_discover && !seen_synced) fail("discovery catalog is missing @synced")
       if ((seen_discover || seen_execution) && !seen_connection) fail("executable catalog is missing @connection")
       if (seen_connection && !seen_discover && !seen_execution) fail("@connection requires @discover or @execution PATH")
       if (previous_group != "" && group_command_count == 0) fail("group \"" previous_group "\" has no commands")
