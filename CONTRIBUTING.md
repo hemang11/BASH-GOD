@@ -178,9 +178,10 @@ Every executable catalog declares one connection model:
 - Use `CONTEXT` for client-owned contexts such as Kubernetes kubeconfig or AWS profile/region. Do
   not manufacture a host or port for them.
 
-The shared resolver replaces only the exact catalog default `localhost:<port>` in the reviewed
-runtime model. Static views stay copy-ready and unchanged. A local listener is a candidate, not proof
-that the advertised remote service endpoint is reachable.
+The shared resolver applies a cached Target only in the reviewed runtime model. It replaces the
+catalog's exact `localhost:<port>` or `<host>:<port>` default and fills explicit `HOST`/`--host` plus
+default `PORT`/`--port` slots. Static views stay copy-ready and unchanged. A local listener is a
+candidate, not proof that the advertised remote service endpoint is reachable.
 
 #### B. Use the caller's PATH
 

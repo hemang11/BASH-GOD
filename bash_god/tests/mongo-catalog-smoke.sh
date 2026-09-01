@@ -52,6 +52,7 @@ printf 'path=%s\n' "$fixture_bin" > "$fixture_config/bash-god/mongo.conf"
 XDG_STATE_HOME="$fixture_state"
 XDG_CONFIG_HOME="$fixture_config"
 export XDG_STATE_HOME XDG_CONFIG_HOME
+_god_discover_local_listener_target() { return 1; }
 if _god_discover_resolve mongo "$catalog"; then
   expect_eq "$(_god_discover_path mongo)" "$fixture_bin" 'MongoDB discovery uses the configured fake root'
   expect_eq "$(_god_discover_version mongo)" 2.4.1 'MongoDB discovery reads modern client version'
@@ -74,13 +75,31 @@ fi
 . "$project_dir/bash_god/search.sh"
 connect_model="$(_god_resolve_command mongo "$catalog" connect 1 "$fixture_bin" '')"
 query_model="$(_god_resolve_command mongo "$catalog" query 2 "$fixture_bin" '')"
-missing_preferred="$(_god_search_discovered_tool_missing "$fixture_bin" 'mongosh --quiet --eval '\''db.stats()'\''' "$(_god_catalog_discover_probes "$catalog")" mongo)" || true
+missing_preferred="$(_god_search_discovered_tool_missing "$fixture_bin" 'mongosh --host <host> --port 27017 --quiet --eval '\''db.stats()'\''' "$(_god_catalog_discover_probes "$catalog")" mongo)" || true
 if printf '%s\n' "$connect_model" | LC_ALL=C grep -Fq "$fixture_bin/mongo \"mongodb://" && \
-   printf '%s\n' "$query_model" | LC_ALL=C grep -Fq "$fixture_bin/mongo --quiet --eval" && \
+   printf '%s\n' "$query_model" | LC_ALL=C grep -Fq "$fixture_bin/mongo --host <host> --port 27017 --quiet --eval" && \
    [ -z "$missing_preferred" ]; then
   :
 else
   fail 'legacy fallback runs preferred MongoDB shell rows through the cached client'
+fi
+
+# A cached service Target must reach URI-shaped and --host/--port-shaped
+# MongoDB commands alike. This uses only the fake selected client and state
+# cache; it never opens a MongoDB connection.
+_god_discover_cache_set mongo.target mongo.internal:29017
+uri_target_model="$(_god_resolve_command mongo "$catalog" connect 1 "$fixture_bin" '')"
+legacy_target_model="$(_god_resolve_command mongo "$catalog" connect 4 "$fixture_bin" '')"
+replica_target_model="$(_god_resolve_command mongo "$catalog" replica 1 "$fixture_bin" '')"
+if has_exact_line "$uri_target_model" $'DISPLAY\t'"$fixture_bin/mongo \"mongodb://mongo.internal:29017/<database>\"" && \
+   has_exact_line "$legacy_target_model" $'DISPLAY\t'"$fixture_bin/mongo --host mongo.internal --port 29017 <database>" && \
+   has_exact_line "$legacy_target_model" $'VALUE\tmongo.internal' && \
+   has_exact_line "$legacy_target_model" $'VALUE\t29017' && \
+   has_exact_line "$replica_target_model" $'DISPLAY\t'"$fixture_bin/mongo --host mongo.internal --port 29017 --quiet --eval 'rs.status()'" && \
+   ! printf '%s\n' "$replica_target_model" | LC_ALL=C grep -Fq '<host>'; then
+  :
+else
+  fail 'MongoDB Target binds URI and explicit host-port command forms'
 fi
 
 # No executable catalog may bring back a raw REPL line or the removed
@@ -115,7 +134,7 @@ if ! LC_ALL=C awk '
     run = $0
     field = ""
     if (run ~ /^(show[[:space:]]|use[[:space:]]|help$|rs\.|db\.)/) fail(title " is still a raw in-shell snippet")
-    if (run ~ /^mongosh[[:space:]]+--quiet[[:space:]]+--eval[[:space:]]+/) wrapped++
+    if (run ~ /^mongosh[[:space:]]+--host[[:space:]]+<host>[[:space:]]+--port[[:space:]]+27017[[:space:]]+--quiet[[:space:]]+--eval[[:space:]]+/) wrapped++
     if (run ~ /^mongosh([[:space:]]|$)/ && since != "0.0") fail(title " must support the declared legacy fallback")
     next
   }

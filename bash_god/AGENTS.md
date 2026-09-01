@@ -385,8 +385,9 @@ Every executable catalog declares exactly one connection model:
   catalogs. On explicit `god SERVICE --resync`, the shared engine prefers a non-secret
   `target=host:port` user override in `~/.config/bash-god/SERVICE.conf`; otherwise it may cache one
   concrete local listener at the declared port. `god --paths` prints only `Target: host:port` or
-  `Target: unresolved`. The discovered target rewrites the catalog's exact `localhost:<port>`
-  default in the reviewed runtime model only; static catalog text stays copy-ready. Do not put a
+  `Target: unresolved`. The discovered target rewrites the catalog's exact `localhost:<port>` or
+  `<host>:<port>` default and fills explicit `HOST`/`--host` plus default `PORT`/`--port` slots in
+  the reviewed runtime model only; static catalog text stays copy-ready. Do not put a
   credential-bearing URI in `target=`.
 - `@connection CONTEXT` is for client-managed destinations such as Kubernetes kubeconfig or AWS
   profile/region. It deliberately has no invented hostname or port.

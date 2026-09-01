@@ -79,19 +79,58 @@ _god_resolve_rewrite_paths() {
 
 # _god_resolve_rewrite_endpoint RUN TARGET PORT
 #
-# Catalog text stays copyable with localhost:<port>. Once explicit resync has
-# cached an endpoint authority, only the reviewed runtime model rewrites that
-# exact default. This deliberately does not rewrite arbitrary hosts, URLs, or
-# user-provided values.
+# Catalog text stays copyable with its default authority. Once explicit resync
+# has cached an endpoint authority, only the reviewed runtime model rewrites
+# the exact catalog default: either localhost:<port> or <host>:<port>. The
+# latter keeps URI-shaped catalog commands tied to the same cached target as
+# flag-shaped commands. This deliberately does not rewrite arbitrary hosts,
+# URLs, or user-provided values.
 _god_resolve_rewrite_endpoint() {
-  local run target port default_target
+  local run target port default_target placeholder_target
 
   run=$1
   target=$2
   port=$3
   [ -n "$target" ] && [ -n "$port" ] || { printf '%s\n' "$run"; return 0; }
   default_target="localhost:$port"
-  printf '%s\n' "${run//"$default_target"/$target}"
+  placeholder_target="<host>:$port"
+  run="${run//"$default_target"/$target}"
+  printf '%s\n' "${run//"$placeholder_target"/$target}"
+}
+
+# _god_resolve_endpoint_target_parts TARGET
+#
+# Emits HOST<TAB>PORT for the validated authority cached by discovery. URI
+# syntax keeps brackets around IPv6 through _god_resolve_rewrite_endpoint;
+# native --host flags receive the bare IPv6 host they expect. Parsing here is
+# intentionally independent from discovery so a hand-edited state cache cannot
+# turn a reviewed command template into shell syntax.
+_god_resolve_endpoint_target_parts() {
+  local target
+
+  target=$1
+  LC_ALL=C awk '
+    /^[A-Za-z0-9._-]+:[0-9]+$/ {
+      host = $0
+      sub(/:[0-9]+$/, "", host)
+      port = $0
+      sub(/^.*:/, "", port)
+      if ((port + 0) >= 1 && (port + 0) <= 65535) print host "\t" port
+      else exit 1
+      exit
+    }
+    /^\[[0-9A-Fa-f:.]+\]:[0-9]+$/ {
+      host = $0
+      sub(/^\[/, "", host)
+      sub(/\]:[0-9]+$/, "", host)
+      port = $0
+      sub(/^.*\]:/, "", port)
+      if ((port + 0) >= 1 && (port + 0) <= 65535) print host "\t" port
+      else exit 1
+      exit
+    }
+    { exit 1 }
+  ' <<< "$target"
 }
 
 # _god_resolve_harvest QUERY
@@ -409,8 +448,9 @@ _god_resolve_prompt_value() {
 # both, since that text is maintainer-authored, the same trust level as @run.
 _god_resolve_command() {
   local service catalog group entry execution_path query
-  local mode run display template tag discover_probes discovered_tool execution_mode connection_kind connection_port target
-  local name example meaning span query_words placeholder documented_span covered
+  local mode run display template tag discover_probes discovered_tool execution_mode connection_kind connection_port target target_host target_port target_parts
+  local name example meaning span query_words placeholder documented_span covered parameter_key
+  local documented_host documented_port
   local -a param_names param_examples param_spans param_meanings param_keyword_classes param_bound
   local -a name_pool num_pool values
   local pool_index bound value_count i
@@ -464,11 +504,60 @@ _god_resolve_command() {
   fi
   run="$(_god_resolve_rewrite_paths "$run" "$execution_path" "$discover_probes" "$discovered_tool")"
   connection_kind="$(_god_catalog_connection_kind "$catalog")"
-  if [ "$mode" != LOCAL ] && [ "$connection_kind" = ENDPOINT ] && \
-     [ -n "$(type -t _god_discover_target 2>/dev/null)" ]; then
+  connection_port=''
+  target=''
+  target_host=''
+  target_port=''
+  if [ "$mode" != LOCAL ] && [ "$connection_kind" = ENDPOINT ]; then
     connection_port="$(_god_catalog_connection_port "$catalog")"
-    target="$(_god_discover_target "$service" 2>/dev/null)"
-    run="$(_god_resolve_rewrite_endpoint "$run" "$target" "$connection_port")"
+    if [ -n "$(type -t _god_discover_target 2>/dev/null)" ]; then
+      target="$(_god_discover_target "$service" 2>/dev/null)"
+      target_parts="$(_god_resolve_endpoint_target_parts "$target" 2>/dev/null)" || target_parts=''
+      if [ -n "$target_parts" ]; then
+        IFS="$(printf '\t')" read -r target_host target_port <<< "$target_parts"
+        run="$(_god_resolve_rewrite_endpoint "$run" "$target" "$connection_port")"
+      fi
+    fi
+  fi
+
+  # A catalog's readable command form sometimes carries --host/--port but
+  # does not repeat those obvious flags in @params. Treat that explicit form
+  # as the same generic endpoint slot so it receives the cached Target (or a
+  # clear prompt when no target was resolved). Existing catalog metadata wins
+  # and is never duplicated.
+  if [ "$mode" != LOCAL ] && [ "$connection_kind" = ENDPOINT ]; then
+    documented_host=0
+    documented_port=0
+    i=0
+    while [ "$i" -lt "${#param_names[@]}" ]; do
+      parameter_key=${param_names[$i]#--}
+      parameter_key="$(printf '%s' "$parameter_key" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+      case "$parameter_key" in
+        host|hostname) documented_host=1 ;;
+        port) documented_port=1 ;;
+      esac
+      i=$((i + 1))
+    done
+    if [ "$documented_host" = 0 ] && [[ "$run" == *'--host <host>'* ]]; then
+      param_names+=(HOST)
+      param_examples+=('<host>')
+      param_spans+=('')
+      param_meanings+=('Service hostname from the cached Target')
+      param_keyword_classes+=('host:name')
+    elif [ "$documented_host" = 0 ] && [[ "$run" == *'--hostname <hostname>'* ]]; then
+      param_names+=(HOSTNAME)
+      param_examples+=('<hostname>')
+      param_spans+=('')
+      param_meanings+=('Service hostname from the cached Target')
+      param_keyword_classes+=('host:name')
+    fi
+    if [ "$documented_port" = 0 ] && [[ "$run" == *"--port $connection_port"* ]]; then
+      param_names+=(PORT)
+      param_examples+=("$connection_port")
+      param_spans+=('')
+      param_meanings+=('Service listener port from the cached Target')
+      param_keyword_classes+=('port:num')
+    fi
   fi
 
   # Catalogs express a slot either as its placeholder example (the original
@@ -481,9 +570,15 @@ _god_resolve_command() {
   while [ "$i" -lt "${#param_names[@]}" ]; do
     name="${param_names[$i]}"
     example="${param_examples[$i]}"
+    parameter_key=${name#--}
+    parameter_key="$(printf '%s' "$parameter_key" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
     span=''
     if _god_resolve_is_placeholder "$name" && [[ "$run" == *"$name"* ]]; then
       span=$name
+    elif [ "$parameter_key" = port ] && [[ "$run" == *"--port $example"* ]]; then
+      # A rewritten URI contains its listener port as part of the cached
+      # authority. That is not an independently editable --port slot.
+      span=$example
     elif [[ "$run" == *"$example"* ]]; then
       span=$example
     fi
@@ -534,8 +629,25 @@ _god_resolve_command() {
     span="${param_spans[$i]}"
     meaning="${param_meanings[$i]}"
     bound=''
+    parameter_key=${name#--}
+    parameter_key="$(printf '%s' "$parameter_key" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
 
-    if [ -n "$span" ] && ! _god_resolve_is_placeholder "$span"; then
+    # An ENDPOINT catalog's cached Target is the reviewed service-wide
+    # default. Bind only explicit host/hostname placeholders and the catalog's
+    # declared listener-port default; unrelated numbers and destinations keep
+    # their normal query/config behavior. Values remain positional parameters,
+    # so a target never becomes shell syntax.
+    if [ -n "$span" ] && [ -n "$target_host" ]; then
+      case "$parameter_key" in
+        host|hostname)
+          _god_resolve_is_placeholder "$span" && bound=$target_host
+          ;;
+        port)
+          [ "$span" = "$connection_port" ] && bound=$target_port
+          ;;
+      esac
+    fi
+    if [ -n "$span" ] && ! _god_resolve_is_placeholder "$span" && [ -z "$bound" ]; then
       bound="$(_god_resolve_config_value "$service" "$name" "$span")"
       [ "$bound" = "$span" ] && bound=''
     fi

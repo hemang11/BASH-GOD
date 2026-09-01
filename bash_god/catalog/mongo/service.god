@@ -153,7 +153,7 @@ Use the mongosh form on current installations.
 @description
 Shows the current member's view of replica-set health, states, heartbeats, elections, and optimes.
 @run
-mongosh --quiet --eval 'rs.status()'
+mongosh --host <host> --port 27017 --quiet --eval 'rs.status()'
 @notes
 Runs against the selected shell's normal connection target; use a replica-set member.
 @end
@@ -164,7 +164,7 @@ Runs against the selected shell's normal connection target; use a replica-set me
 @description
 Displays the replica-set configuration, including member hosts, votes, priorities, and settings.
 @run
-mongosh --quiet --eval 'rs.conf()'
+mongosh --host <host> --port 27017 --quiet --eval 'rs.conf()'
 @notes
 Runs against the selected shell's normal connection target; use a replica-set member.
 @end
@@ -175,7 +175,7 @@ Runs against the selected shell's normal connection target; use a replica-set me
 @description
 Returns a compact runtime view of each member's identity, state, health, and latest applied operation time.
 @run
-mongosh --quiet --eval 'rs.status().members.map(function(m) { return { id: m._id, name: m.name, state: m.stateStr, health: m.health, optime: m.optimeDate }; })'
+mongosh --host <host> --port 27017 --quiet --eval 'rs.status().members.map(function(m) { return { id: m._id, name: m.name, state: m.stateStr, health: m.health, optime: m.optimeDate }; })'
 @notes
 health 1 means the member is reachable from the member where this command runs; inspect state and optime together.
 @end
@@ -186,7 +186,7 @@ health 1 means the member is reachable from the member where this command runs; 
 @description
 Prints each secondary's synchronization source, last applied operation time, and estimated lag.
 @run
-mongosh --quiet --eval 'rs.printSecondaryReplicationInfo()'
+mongosh --host <host> --port 27017 --quiet --eval 'rs.printSecondaryReplicationInfo()'
 @notes
 Run on the primary when possible so every secondary can be compared against the same reference point.
 @end
@@ -197,7 +197,7 @@ Run on the primary when possible so every secondary can be compared against the 
 @description
 Prints the configured oplog size and the time range currently retained on this replica-set member.
 @run
-mongosh --quiet --eval 'rs.printReplicationInfo()'
+mongosh --host <host> --port 27017 --quiet --eval 'rs.printReplicationInfo()'
 @notes
 The oplog window should comfortably exceed the longest expected secondary outage or replication delay.
 @end
@@ -211,7 +211,7 @@ The oplog window should comfortably exceed the longest expected secondary outage
 @description
 Lists the databases visible to the current MongoDB user.
 @run
-mongosh --quiet --eval 'db.adminCommand({ listDatabases: 1 })'
+mongosh --host <host> --port 27017 --quiet --eval 'db.adminCommand({ listDatabases: 1 })'
 @notes
 Runs against the selected shell's normal connection target.
 @end
@@ -222,7 +222,7 @@ Runs against the selected shell's normal connection target.
 @description
 Lists collections and views visible in the current database.
 @run
-mongosh --quiet --eval 'db.getCollectionNames()'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollectionNames()'
 @notes
 Runs against the selected shell's normal connection target.
 @end
@@ -233,7 +233,7 @@ Runs against the selected shell's normal connection target.
 @description
 Displays one collection's type, options, validator, and other catalog metadata.
 @run
-mongosh --quiet --eval 'db.getCollectionInfos({ name: "<collection_name>" })'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollectionInfos({ name: "<collection_name>" })'
 @params
 name | <collection_name> | Exact collection name to inspect
 @notes
@@ -246,7 +246,7 @@ Runs against the selected shell's normal connection target.
 @description
 Shows every index definition, key pattern, name, and configured index option for one collection.
 @run
-mongosh --quiet --eval 'db.getCollection("<collection_name>").getIndexes()'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollection("<collection_name>").getIndexes()'
 @params
 COLLECTION | <collection_name> | Collection whose indexes should be inspected
 @notes
@@ -259,7 +259,7 @@ Runs against the selected shell's normal connection target.
 @description
 Shows collection, document, storage, and index totals for the current database in mebibytes.
 @run
-mongosh --quiet --eval 'db.stats({ scale: 1024 * 1024 })'
+mongosh --host <host> --port 27017 --quiet --eval 'db.stats({ scale: 1024 * 1024 })'
 @params
 scale | 1024 * 1024 | Divide byte-based size fields into mebibytes
 @notes
@@ -272,7 +272,7 @@ Runs against the selected shell's normal connection target.
 @description
 Shows document count, logical size, allocated storage, and index totals for one collection in mebibytes.
 @run
-mongosh --quiet --eval 'db.getCollection("<collection_name>").stats({ scale: 1024 * 1024 })'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollection("<collection_name>").stats({ scale: 1024 * 1024 })'
 @params
 COLLECTION | <collection_name> | Collection whose storage should be inspected
 scale | 1024 * 1024 | Divide byte-based size fields into mebibytes
@@ -303,7 +303,7 @@ This opens an interactive shell; exit returns to BASH_GOD without creating a dat
 @description
 Finds documents containing one exact field value and returns at most twenty results.
 @run
-mongosh --quiet --eval 'db.getCollection("<collection_name>").find({ "<field>": "<value>" }).limit(20)'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollection("<collection_name>").find({ "<field>": "<value>" }).limit(20)'
 @params
 COLLECTION | <collection_name> | Collection to query
 FIELD | <field> | Document field used by the filter
@@ -321,7 +321,7 @@ Runs against the selected shell's normal connection target.
 @description
 Looks up one document by its standard MongoDB _id ObjectId value.
 @run
-mongosh --quiet --eval 'db.getCollection("<collection_name>").findOne({ _id: ObjectId("<object_id>") })'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollection("<collection_name>").findOne({ _id: ObjectId("<object_id>") })'
 @params
 COLLECTION | <collection_name> | Collection to query
 ObjectId | <object_id> | Twenty-four-character hexadecimal ObjectId string
@@ -335,7 +335,7 @@ Runs against the selected shell's normal connection target.
 @description
 Filters documents and projects only the requested field while excluding _id.
 @run
-mongosh --quiet --eval 'db.getCollection("<collection_name>").find({ "<field>": "<value>" }, { "<field_to_return>": 1, _id: 0 }).limit(20)'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollection("<collection_name>").find({ "<field>": "<value>" }, { "<field_to_return>": 1, _id: 0 }).limit(20)'
 @params
 FILTER | "<field>": "<value>" | Exact field-value condition
 PROJECTION | "<field_to_return>": 1 | Include this field in each result
@@ -350,7 +350,7 @@ Runs against the selected shell's normal connection target.
 @description
 Sorts one collection by a timestamp field in descending order and returns the latest twenty documents.
 @run
-mongosh --quiet --eval 'db.getCollection("<collection_name>").find({}).sort({ "<timestamp_field>": -1 }).limit(20)'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollection("<collection_name>").find({}).sort({ "<timestamp_field>": -1 }).limit(20)'
 @params
 COLLECTION | <collection_name> | Collection to query
 TIMESTAMP_FIELD | <timestamp_field> | Date or sortable sequence field
@@ -366,7 +366,7 @@ Runs against the selected shell's normal connection target.
 @description
 Returns an exact count of documents matching one field-value condition.
 @run
-mongosh --quiet --eval 'db.getCollection("<collection_name>").countDocuments({ "<field>": "<value>" })'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollection("<collection_name>").countDocuments({ "<field>": "<value>" })'
 @params
 COLLECTION | <collection_name> | Collection to count
 FILTER | "<field>": "<value>" | Condition documents must match
@@ -380,7 +380,7 @@ Runs against the selected shell's normal connection target.
 @description
 Finds up to twenty documents whose selected field matches a case-insensitive regular expression.
 @run
-mongosh --quiet --eval 'db.getCollection("<collection_name>").find({ "<field>": { $regex: "<pattern>", $options: "i" } }).limit(20)'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollection("<collection_name>").find({ "<field>": { $regex: "<pattern>", $options: "i" } }).limit(20)'
 @params
 $regex | <pattern> | Regular expression applied to the selected field
 $options | i | Make matching case-insensitive
@@ -395,7 +395,7 @@ An unanchored regular expression can scan many documents; inspect indexes and na
 @description
 Shows the winning plan, index usage, documents examined, keys examined, and execution timing for a find query.
 @run
-mongosh --quiet --eval 'db.getCollection("<collection_name>").explain("executionStats").find({ "<field>": "<value>" })'
+mongosh --host <host> --port 27017 --quiet --eval 'db.getCollection("<collection_name>").explain("executionStats").find({ "<field>": "<value>" })'
 @params
 executionStats | mode | Execute the read query and include runtime statistics
 FILTER | "<field>": "<value>" | Query whose plan should be inspected
@@ -412,7 +412,7 @@ This executes the read query to measure it but does not modify documents.
 @description
 Returns a broad snapshot of process state, memory, connections, network traffic, locks, and storage-engine metrics.
 @run
-mongosh --quiet --eval 'db.serverStatus()'
+mongosh --host <host> --port 27017 --quiet --eval 'db.serverStatus()'
 @notes
 The output is large; use the focused rows in this group when only one metric family is needed.
 @end
@@ -423,7 +423,7 @@ The output is large; use the focused rows in this group when only one metric fam
 @description
 Displays current, available, active, and rejected client connection counters.
 @run
-mongosh --quiet --eval 'db.serverStatus().connections'
+mongosh --host <host> --port 27017 --quiet --eval 'db.serverStatus().connections'
 @notes
 Runs against the selected shell's normal connection target.
 @end
@@ -434,7 +434,7 @@ Runs against the selected shell's normal connection target.
 @description
 Lists database operations that are currently active on the connected server.
 @run
-mongosh --quiet --eval 'db.currentOp({ active: true })'
+mongosh --host <host> --port 27017 --quiet --eval 'db.currentOp({ active: true })'
 @notes
 Viewing every user's operations requires the inprog privilege; without it, use db.currentOp({ $ownOps: true }) for your own operations.
 @end
@@ -445,7 +445,7 @@ Viewing every user's operations requires the inprog privilege; without it, use d
 @description
 Lists active operations running longer than five seconds in one database namespace.
 @run
-mongosh --quiet --eval 'db.currentOp({ active: true, secs_running: { $gt: 5 }, ns: /^<database>\./ })'
+mongosh --host <host> --port 27017 --quiet --eval 'db.currentOp({ active: true, secs_running: { $gt: 5 }, ns: /^<database>\./ })'
 @params
 $gt | 5 | Minimum elapsed runtime in seconds
 ns | /^<database>\./ | Match namespaces belonging to this database
@@ -594,7 +594,7 @@ mongosh --help
 @description
 Lists the database methods available through the selected MongoDB shell.
 @run
-mongosh --quiet --eval 'db.help()'
+mongosh --host <host> --port 27017 --quiet --eval 'db.help()'
 @notes
 Runs against the selected shell's normal connection target.
 @end

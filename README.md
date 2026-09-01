@@ -141,7 +141,8 @@ checked against each command's declared support range, so incompatible rows show
 title and remain copy-ready but cannot be edited or run. Each executable catalog also declares a
 connection model: local/none, endpoint, or client-managed context. During `god SERVICE --resync`,
 an endpoint catalog can cache an explicit non-secret `host:port` target or a concrete local listener;
-`god --paths` shows the resolved client, catalog review version, and target. A service that declares
+the reviewed command uses that Target for its declared endpoint, host, and port defaults. `god --paths`
+shows the resolved client, catalog review version, and target. A service that declares
 `@execution PATH` uses the same reviewed picker through normal PATH lookup. In every case, the value
 of a confirmed `@run` line is passed as an argument-safe template—never before you have seen and
 approved it. Catalogs without either marker stay display-only.

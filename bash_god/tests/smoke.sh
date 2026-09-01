@@ -315,6 +315,14 @@ printf '%s\n' \
   'Uses the catalog default authority.' \
   '@run' \
   'fixture.sh --bootstrap-server localhost:9092 --list' \
+  '@end' \
+  '@command Connect through explicit host and port slots' \
+  '@mode MODERN' \
+  '@since 1.0' \
+  '@description' \
+  'Uses explicit endpoint flags without repeating them in parameter metadata.' \
+  '@run' \
+  'fixture.sh --host <host> --port 9092 --status' \
   '@end' > "$target_fixture_catalog"
 target_resolution_output="$(GOD_COLOR=never bash -c '
   . "$1/BASH_GOD.sh"
@@ -323,11 +331,14 @@ target_resolution_output="$(GOD_COLOR=never bash -c '
   printf "TARGET:%s\n" "$(_god_discover_target fixture)"
   printf "VERSION:%s\n" "$(_god_discover_version fixture)"
   _god_resolve_command fixture "$2" demo 1 "$3" ""
+  _god_resolve_command fixture "$2" demo 2 "$3" ""
 ' _ "$project_dir" "$target_fixture_catalog" "$target_fixture_bin")"
 if contains "$target_resolution_output" 'TARGET:10.24.12.7:9092' && contains "$target_resolution_output" 'VERSION:1.0' && \
    contains "$target_resolution_output" $'DISPLAY\t'"$target_fixture_bin/fixture.sh --bootstrap-server 10.24.12.7:9092 --list" && \
+   contains "$target_resolution_output" $'DISPLAY\t'"$target_fixture_bin/fixture.sh --host 10.24.12.7 --port 9092 --status" && \
+   contains "$target_resolution_output" $'TEMPLATE\t'"$target_fixture_bin/fixture.sh --host \"\${1}\" --port \"\${2}\" --status" && \
    not_contains "$target_resolution_output" 'localhost:9092'; then
-  pass 'resync caches a local endpoint candidate and rewrites only the reviewed runtime command'
+  pass 'resync caches a local endpoint candidate and binds every reviewed endpoint form'
 else
   fail 'resync caches a local endpoint candidate and rewrites only the reviewed runtime command'
 fi
@@ -340,9 +351,11 @@ target_override_output="$(GOD_COLOR=never bash -c '
   _god_discover_resolve override "$2" || exit $?
   printf "TARGET:%s\n" "$(_god_discover_target override)"
   _god_resolve_command override "$2" demo 1 "$3" ""
+  _god_resolve_command override "$2" demo 2 "$3" ""
 ' _ "$project_dir" "$target_fixture_catalog" "$target_fixture_bin")"
 if contains "$target_override_output" 'TARGET:broker.internal:19092' && \
    contains "$target_override_output" $'DISPLAY\t'"$target_fixture_bin/fixture.sh --bootstrap-server broker.internal:19092 --list" && \
+   contains "$target_override_output" $'DISPLAY\t'"$target_fixture_bin/fixture.sh --host broker.internal --port 19092 --status" && \
    not_contains "$target_override_output" '10.24.12.7:9092'; then
   pass 'configured endpoint target overrides a discovered local listener'
 else
@@ -1311,7 +1324,7 @@ fi
 mongo_service_output="$(GOD_COLOR=never "$god_cli" mongo service)"
 mongo_backup_output="$(GOD_COLOR=never "$god_cli" mongo backup)"
 mongo_replica_output="$(GOD_COLOR=never "$god_cli" mongo replica)"
-if contains "$mongo_service_output" '$ systemctl status mongod' && contains "$mongo_backup_output" '$ mongodump ' && contains "$mongo_backup_output" '$ mongorestore ' && contains "$mongo_backup_output" '[WRITE]' && contains "$mongo_replica_output" "\$ mongosh --quiet --eval 'rs.status()'"; then
+if contains "$mongo_service_output" '$ systemctl status mongod' && contains "$mongo_backup_output" '$ mongodump ' && contains "$mongo_backup_output" '$ mongorestore ' && contains "$mongo_backup_output" '[WRITE]' && contains "$mongo_replica_output" "\$ mongosh --host <host> --port 27017 --quiet --eval 'rs.status()'"; then
   pass 'MongoDB catalog covers executable service, replica-set, dump, and restore commands'
 else
   fail 'MongoDB catalog covers executable service, replica-set, dump, and restore commands'
