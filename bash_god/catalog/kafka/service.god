@@ -3,14 +3,24 @@
 @description
 A personal Kafka operator knowledge base covering access, setup, brokers, configuration, topics,
 consumer groups, offsets, consuming, producing, health, ZooKeeper, KRaft, replication, security,
-and native tool help. Commands are displayed as inert text and are never executed by BASH_GOD.
-Examples assume the Kafka bin directory is the current directory unless an absolute path is shown.
+and native tool help. Commands are shown for review and, once BASH_GOD resolves this machine's
+install and you confirm, can be run directly. Examples assume the Kafka bin directory is the
+current directory unless an absolute path is shown.
+
+@discover
+probe | kafka-topics.sh | Core topic-management tool; presence marks a resolved Kafka install
+root | /opt/kafka/bin | Common Kafka install layout
+scan | /opt | Bounded scan root when the common layout is absent
+version | kafka-topics.sh --version 2>/dev/null; [ $? -ne 0 ] && { f=$(echo ../libs/kafka_*.jar); v=${f##*-}; echo ${v%.jar}; } | Kafka >=2.4 prints the version directly; older builds have no --version flag, so this falls back to the version embedded in the libs/kafka_<scala>-<version>.jar filename
+
+@synced 3.9
 
 
 @group access
 
 @command SSH to the preprod database jump host
 @mode LOCAL
+@since 0.0
 @description
 Connects to the known preprod host before following the approved internal route to Kafka.
 @run
@@ -25,6 +35,7 @@ Use only the approved internal hop from this host; BASH_GOD does not enable agen
 
 @command Find the Kafka command directory
 @mode LOCAL
+@since 0.0
 @description
 Searches /opt for the Kafka console-consumer executable so its parent directory can be used as the bin directory.
 @run
@@ -35,6 +46,7 @@ If the result is /opt/kafka/bin/kafka-console-consumer.sh, use /opt/kafka/bin as
 
 @command Enter the Kafka command directory
 @mode LOCAL
+@since 0.0
 @description
 Changes into the Kafka bin directory so commands can be invoked with ./tool-name.sh.
 @run
@@ -44,19 +56,21 @@ DIRECTORY | /opt/kafka/bin | Kafka bin directory discovered on this server
 @end
 
 @command Show the installed Kafka version
-@mode LOCAL
+@mode MODERN
+@since 0.0
 @description
-Prints the Kafka version exposed by the installed topic tool.
+Reads the Kafka version from the packaged Kafka jar name.
 @run
-./kafka-topics.sh --version
+basename ../libs/kafka_*.jar .jar | cut -d- -f2-
 @end
 
 @command List installed Kafka command-line tools
-@mode LOCAL
+@mode MODERN
+@since 0.0
 @description
-Lists Kafka executables available in the current bin directory.
+Lists Kafka executables available in the resolved Kafka bin directory.
 @run
-find . -maxdepth 1 -type f -name 'kafka-*' -print | sort
+find ./ -maxdepth 1 -type f -name 'kafka-*' -print | sort
 @end
 
 
@@ -64,6 +78,7 @@ find . -maxdepth 1 -type f -name 'kafka-*' -print | sort
 
 @command Check the Kafka systemd service
 @mode LOCAL
+@since 0.0
 @description
 Shows whether the local Kafka service is running and displays recent service status.
 @run
@@ -74,6 +89,7 @@ SERVICE | kafka | Local systemd unit name; it may be kafka-server on some hosts
 
 @command Find the running Kafka process
 @mode LOCAL
+@since 0.0
 @description
 Shows Kafka JVM processes and their launch arguments.
 @run
@@ -82,6 +98,7 @@ pgrep -af 'kafka.Kafka|Kafka'
 
 @command Check whether the Kafka listener port is open
 @mode LOCAL
+@since 0.0
 @description
 Shows the process listening on the usual Kafka broker port.
 @run
@@ -92,6 +109,7 @@ PORT | 9092 | Broker listener port from server.properties
 
 @command Show recent Kafka service logs
 @mode LOCAL
+@since 0.0
 @description
 Displays the latest systemd journal entries for the Kafka service.
 @run
@@ -103,6 +121,7 @@ journalctl -u kafka -n 200 --no-pager
 
 @command Show broker configuration
 @mode LOCAL
+@since 0.0
 @description
 Displays the broker server.properties file from the Kafka installation.
 @run
@@ -111,6 +130,7 @@ cat ../config/server.properties
 
 @command Show broker log-directory disk usage
 @mode LOCAL
+@since 0.0
 @description
 Displays space used by the example broker data directory.
 @run
@@ -124,6 +144,7 @@ DIRECTORY | /tmp/kafka-logs | Example value; confirm log.dirs before using it
 
 @command Show important broker settings
 @mode LOCAL
+@since 0.0
 @description
 Extracts identity, listener, storage, ZooKeeper, and KRaft settings from server.properties.
 @run
@@ -132,6 +153,7 @@ grep -E '^(broker.id|node.id|listeners|advertised.listeners|log.dirs|zookeeper.c
 
 @command Show Kafka client properties
 @mode LOCAL
+@since 0.0
 @description
 Displays the client properties commonly passed through --command-config.
 @run
@@ -142,6 +164,7 @@ Client properties can contain authentication material; review the file before sh
 
 @command Describe one topic's dynamic configuration
 @mode MODERN
+@since 2.6
 @description
 Shows topic-level configuration overrides such as retention and cleanup policy.
 @run
@@ -155,6 +178,7 @@ Shows topic-level configuration overrides such as retention and cleanup policy.
 
 @command Describe one broker's dynamic configuration
 @mode MODERN
+@since 1.1
 @description
 Shows dynamic configuration overrides for a broker ID.
 @run
@@ -168,6 +192,7 @@ Shows dynamic configuration overrides for a broker ID.
 
 @command Describe cluster-wide broker defaults
 @mode MODERN
+@since 1.1
 @description
 Shows dynamic broker defaults that apply across the cluster.
 @run
@@ -178,6 +203,7 @@ Shows dynamic broker defaults that apply across the cluster.
 
 @command Describe user quota configuration
 @mode MODERN
+@since 2.6
 @description
 Lists dynamic quota and authentication-related configuration for Kafka users.
 @run
@@ -192,6 +218,8 @@ Lists dynamic quota and authentication-related configuration for Kafka users.
 
 @command List topics through a broker
 @mode MODERN
+@since 2.2
+@intent list-topics
 @description
 Lists topics available through the selected Kafka cluster.
 @run
@@ -203,6 +231,8 @@ Lists topics available through the selected Kafka cluster.
 
 @command Describe a topic through a broker
 @mode MODERN
+@since 2.2
+@intent describe-topic
 @description
 Shows partitions, leaders, replicas, in-sync replicas, and topic configuration.
 @run
@@ -215,6 +245,7 @@ Shows partitions, leaders, replicas, in-sync replicas, and topic configuration.
 
 @command Create a topic
 @mode MODERN
+@since 2.2
 @risk WRITE
 @description
 Creates a topic with an explicit partition count and replication factor.
@@ -228,6 +259,7 @@ Creates a topic with an explicit partition count and replication factor.
 
 @command Add partitions to an existing topic
 @mode MODERN
+@since 2.2
 @risk WRITE
 @description
 Increases a topic's total partition count; Kafka cannot reduce it later.
@@ -240,6 +272,7 @@ Increases a topic's total partition count; Kafka cannot reduce it later.
 
 @command Delete a topic
 @mode MODERN
+@since 2.2
 @risk DELETE
 @description
 Requests deletion of a topic and its retained records.
@@ -251,6 +284,7 @@ Requests deletion of a topic and its retained records.
 
 @command Describe every topic
 @mode MODERN
+@since 2.2
 @description
 Displays partition and replica metadata for all visible topics.
 @run
@@ -262,6 +296,7 @@ Displays partition and replica metadata for all visible topics.
 
 @command List consumer groups
 @mode MODERN
+@since 0.10.1
 @description
 Lists consumer groups known to the selected Kafka cluster.
 @run
@@ -274,6 +309,7 @@ Lists consumer groups known to the selected Kafka cluster.
 
 @command Show active members of a consumer group
 @mode MODERN
+@since 1.0
 @description
 Shows active consumer IDs, hosts, client IDs, and member counts.
 @run
@@ -285,6 +321,7 @@ Shows active consumer IDs, hosts, client IDs, and member counts.
 
 @command Show group partition assignments
 @mode MODERN
+@since 1.0
 @description
 Shows every member and the topic partitions assigned to it.
 @run
@@ -297,6 +334,7 @@ Shows every member and the topic partitions assigned to it.
 
 @command Show consumer-group state
 @mode MODERN
+@since 1.0
 @description
 Shows the coordinator, assignment strategy, state, and number of members.
 @run
@@ -308,6 +346,7 @@ Shows the coordinator, assignment strategy, state, and number of members.
 
 @command Delete an inactive consumer group
 @mode MODERN
+@since 1.1
 @risk DELETE
 @description
 Deletes consumer-group metadata when no active members remain.
@@ -323,6 +362,7 @@ Deletes consumer-group metadata when no active members remain.
 
 @command Show consumer-group offsets and lag
 @mode MODERN
+@since 0.10.1
 @description
 Shows committed offsets, log-end offsets, and lag for each assigned partition.
 @run
@@ -338,6 +378,7 @@ Replace connections with cdc to inspect the cdc consumer group.
 
 @command Show earliest offsets for a topic
 @mode MODERN
+@since 3.0
 @description
 Shows the oldest available offset for every selected topic partition.
 @run
@@ -349,6 +390,7 @@ Shows the oldest available offset for every selected topic partition.
 
 @command Show latest offsets for a topic
 @mode MODERN
+@since 3.0
 @description
 Shows the current log-end offset for every selected topic partition.
 @run
@@ -360,6 +402,7 @@ Shows the current log-end offset for every selected topic partition.
 
 @command Preview resetting a group to the earliest offsets
 @mode MODERN
+@since 1.0
 @description
 Calculates the offset changes without applying them because --execute is absent.
 @run
@@ -373,6 +416,7 @@ Calculates the offset changes without applying them because --execute is absent.
 
 @command Preview resetting a group to one explicit offset
 @mode MODERN
+@since 1.0
 @description
 Calculates a reset to one requested offset without applying it.
 @run
@@ -384,6 +428,7 @@ Calculates a reset to one requested offset without applying it.
 
 @command Execute an explicit consumer-group offset reset
 @mode MODERN
+@since 1.0
 @risk WARN
 @description
 Changes the committed offset for an inactive consumer group.
@@ -401,36 +446,37 @@ Changes the committed offset for an inactive consumer group.
 
 @command Read from an exact partition offset
 @mode MODERN
+@since 0.10
 @description
 Starts a console consumer at one explicit topic partition and offset.
 @run
-./kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic sync_asset_updates_across_orgs_topic --offset 20248 --partition 0
+./kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic sync_asset_updates_across_orgs_topic --offset 20248 --partition 0 --max-messages 5 --timeout-ms 10000
 @params
 --bootstrap-server | localhost:9092 | Broker used to reach the cluster
 --topic | sync_asset_updates_across_orgs_topic | Topic containing the records
 --offset | 20248 | First offset to read
 --partition | 0 | Partition containing that offset
-@optional
---max-messages | 5 | Exit after reading this many records
---timeout-ms | 10000 | Stop waiting after this many milliseconds
+--max-messages | 5 | Exit after reading five records
+--timeout-ms | 10000 | Stop waiting after ten seconds
 @end
 
 @command Read a topic from the beginning
 @mode MODERN
+@since 0.10
 @description
 Reads existing topic records beginning with the earliest retained offset.
 @run
-./kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic <topic_name> --from-beginning
+./kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic <topic_name> --from-beginning --max-messages 5 --timeout-ms 10000
 @params
 --topic | <topic_name> | Topic to consume
 --from-beginning | flag | Begin at the earliest retained offset
-@optional
---max-messages | 5 | Exit after reading this many records
---timeout-ms | 10000 | Stop waiting after this many milliseconds
+--max-messages | 5 | Exit after reading five records
+--timeout-ms | 10000 | Stop waiting after ten seconds
 @end
 
 @command Read a bounded sample from the beginning
 @mode MODERN
+@since 0.10
 @description
 Reads a small existing sample and exits on count or timeout.
 @run
@@ -442,6 +488,7 @@ Reads a small existing sample and exits on count or timeout.
 
 @command Print record keys, headers, and timestamps
 @mode MODERN
+@since 0.11
 @description
 Consumes records while exposing metadata useful for debugging serialization and routing.
 @run
@@ -454,6 +501,7 @@ Consumes records while exposing metadata useful for debugging serialization and 
 
 @command Consume with a client-properties file
 @mode MODERN
+@since 0.10
 @description
 Uses a consumer properties file for clusters requiring authentication or TLS settings.
 @run
@@ -469,6 +517,8 @@ Uses a consumer properties file for clusters requiring authentication or TLS set
 @command Publish one message
 @mode MODERN
 @risk WRITE
+@since 2.6
+@intent publish-message
 @description
 Publishes one visible message to a topic through the modern console producer.
 @run
@@ -483,7 +533,10 @@ Create the topic first unless broker auto-creation is enabled. Remove `echo '<me
 
 @command Publish one message with legacy broker-list syntax
 @mode LEGACY-ZK
+@since 0.8
 @risk WRITE
+@until 2.8
+@intent publish-message
 @description
 Publishes one visible message using the broker option found in older Kafka installations.
 @run
@@ -498,6 +551,7 @@ Remove `echo '<message>' |` to enter multiple messages interactively; press Ctrl
 
 @command Publish a keyed message
 @mode MODERN
+@since 2.6
 @risk WRITE
 @description
 Publishes one visible record after splitting its key and value at the colon.
@@ -513,6 +567,7 @@ Remove `echo '<key>:<value>' |` to enter multiple keyed messages interactively; 
 
 @command Publish records from a file
 @mode MODERN
+@since 2.6
 @risk WRITE
 @description
 Publishes each input-file line as one Kafka record.
@@ -528,6 +583,7 @@ FILE | messages.txt | Text file with one record per line
 
 @command Check broker API compatibility
 @mode MODERN
+@since 0.10
 @description
 Queries reachable brokers and displays the Kafka API versions they support.
 @run
@@ -536,6 +592,7 @@ Queries reachable brokers and displays the Kafka API versions they support.
 
 @command Find under-replicated partitions
 @mode MODERN
+@since 2.2
 @description
 Lists partitions whose in-sync replica count is below the configured replica set.
 @run
@@ -546,6 +603,7 @@ Lists partitions whose in-sync replica count is below the configured replica set
 
 @command Find partitions without an available leader
 @mode MODERN
+@since 2.2
 @description
 Lists partitions that currently have no leader and therefore cannot serve traffic.
 @run
@@ -556,6 +614,7 @@ Lists partitions that currently have no leader and therefore cannot serve traffi
 
 @command Describe broker log-directory health
 @mode MODERN
+@since 1.0
 @description
 Shows replica sizes and errors for broker log directories.
 @run
@@ -569,6 +628,8 @@ Shows replica sizes and errors for broker log directories.
 
 @command Show ZooKeeper configuration
 @mode LEGACY-ZK
+@since 0.0
+@until 3.9
 @description
 Displays the ZooKeeper properties file shipped with older Kafka installations.
 @run
@@ -577,6 +638,8 @@ cat ../config/zookeeper.properties
 
 @command Discover the ZooKeeper data directory
 @mode LEGACY-ZK
+@since 0.0
+@until 3.9
 @description
 Reads the configured dataDir instead of assuming /tmp/zookeeper.
 @run
@@ -587,6 +650,9 @@ grep '^[[:space:]]*dataDir=' ../config/zookeeper.properties
 
 @command List topics through ZooKeeper
 @mode LEGACY-ZK
+@since 0.8
+@until 2.8
+@intent list-topics
 @description
 Lists topics using the legacy ZooKeeper connection syntax.
 @run
@@ -598,6 +664,9 @@ Lists topics using the legacy ZooKeeper connection syntax.
 
 @command Describe a topic through ZooKeeper
 @mode LEGACY-ZK
+@since 0.8
+@until 2.8
+@intent describe-topic
 @description
 Shows topic metadata using the legacy ZooKeeper connection syntax.
 @run
@@ -609,6 +678,8 @@ Shows topic metadata using the legacy ZooKeeper connection syntax.
 
 @command List broker IDs registered in ZooKeeper
 @mode LEGACY-ZK
+@since 0.8
+@until 3.9
 @description
 Reads the ZooKeeper broker-registration path used by legacy Kafka clusters.
 @run
@@ -623,6 +694,7 @@ PATH | /brokers/ids | ZooKeeper path containing registered broker IDs
 
 @command Describe KRaft metadata-quorum status
 @mode KRAFT
+@since 2.8
 @description
 Shows the cluster ID, active controller, voters, observers, and follower lag summary.
 @run
@@ -634,6 +706,7 @@ describe --status | operation | Display quorum status
 
 @command Describe KRaft metadata replication
 @mode KRAFT
+@since 2.8
 @description
 Shows per-controller and broker metadata offsets, lag, and catch-up timestamps.
 @run
@@ -644,6 +717,7 @@ describe --replication | operation | Display detailed metadata replication state
 
 @command Describe finalized Kafka features
 @mode KRAFT
+@since 2.8
 @description
 Shows supported and finalized feature levels such as metadata.version and kraft.version.
 @run
@@ -652,6 +726,7 @@ Shows supported and finalized feature levels such as metadata.version and kraft.
 
 @command Inspect a KRaft metadata snapshot
 @mode KRAFT
+@since 2.8
 @description
 Opens the metadata shell against one local KRaft snapshot file.
 @run
@@ -665,6 +740,7 @@ Opens the metadata shell against one local KRaft snapshot file.
 
 @command Generate a partition-reassignment proposal
 @mode MODERN
+@since 2.6
 @description
 Calculates current and proposed replica placement without executing it.
 @run
@@ -677,6 +753,7 @@ Calculates current and proposed replica placement without executing it.
 
 @command Verify a partition reassignment
 @mode MODERN
+@since 2.6
 @description
 Checks the progress or completion state of a submitted reassignment.
 @run
@@ -688,6 +765,7 @@ Checks the progress or completion state of a submitted reassignment.
 
 @command Execute a partition reassignment
 @mode MODERN
+@since 2.6
 @risk WARN
 @description
 Applies a replica-placement plan and starts moving partition data.
@@ -700,6 +778,7 @@ Applies a replica-placement plan and starts moving partition data.
 
 @command Trigger preferred leader election
 @mode MODERN
+@since 2.4
 @risk WRITE
 @description
 Moves eligible partition leadership back to preferred replicas.
@@ -715,6 +794,7 @@ Moves eligible partition leadership back to preferred replicas.
 
 @command List all Kafka ACLs
 @mode MODERN
+@since 2.1
 @description
 Displays access-control entries visible to the current Kafka identity.
 @run
@@ -723,6 +803,7 @@ Displays access-control entries visible to the current Kafka identity.
 
 @command List ACLs for one topic
 @mode MODERN
+@since 2.1
 @description
 Displays access-control entries scoped to one topic resource.
 @run
@@ -733,6 +814,7 @@ Displays access-control entries scoped to one topic resource.
 
 @command Add a consumer ACL
 @mode MODERN
+@since 2.1
 @risk WRITE
 @description
 Grants a principal consumer permissions for one topic and group.
@@ -746,6 +828,7 @@ Grants a principal consumer permissions for one topic and group.
 
 @command Remove matching ACLs
 @mode MODERN
+@since 2.1
 @risk DELETE
 @description
 Removes ACL entries matching the supplied principal and resource filters.
@@ -761,6 +844,7 @@ Removes ACL entries matching the supplied principal and resource filters.
 
 @command Show kafka-topics native help
 @mode MODERN
+@since 0.8
 @description
 Displays options supported by the installed topic tool.
 @run
@@ -769,6 +853,7 @@ Displays options supported by the installed topic tool.
 
 @command Show kafka-consumer-groups native help
 @mode MODERN
+@since 0.9
 @description
 Displays options supported by the installed consumer-group tool.
 @run
@@ -777,6 +862,7 @@ Displays options supported by the installed consumer-group tool.
 
 @command Show kafka-console-consumer native help
 @mode MODERN
+@since 0.8
 @description
 Displays options supported by the installed console consumer.
 @run
@@ -785,6 +871,7 @@ Displays options supported by the installed console consumer.
 
 @command Show kafka-console-producer native help
 @mode MODERN
+@since 0.8
 @description
 Displays options supported by the installed console producer.
 @run
@@ -793,6 +880,7 @@ Displays options supported by the installed console producer.
 
 @command Show kafka-configs native help
 @mode MODERN
+@since 0.10
 @description
 Displays dynamic configuration and quota options.
 @run
@@ -801,6 +889,7 @@ Displays dynamic configuration and quota options.
 
 @command Show kafka-get-offsets native help
 @mode MODERN
+@since 3.0
 @description
 Displays raw topic-offset query options.
 @run
@@ -809,6 +898,7 @@ Displays raw topic-offset query options.
 
 @command Show kafka-log-dirs native help
 @mode MODERN
+@since 1.0
 @description
 Displays broker log-directory inspection options.
 @run
@@ -817,6 +907,7 @@ Displays broker log-directory inspection options.
 
 @command Show kafka-broker-api-versions native help
 @mode MODERN
+@since 2.2
 @description
 Displays broker API compatibility query options.
 @run
@@ -825,6 +916,7 @@ Displays broker API compatibility query options.
 
 @command Show kafka-reassign-partitions native help
 @mode MODERN
+@since 0.8
 @description
 Displays partition-reassignment generation, execution, and verification options.
 @run
@@ -833,6 +925,7 @@ Displays partition-reassignment generation, execution, and verification options.
 
 @command Show kafka-leader-election native help
 @mode MODERN
+@since 2.4
 @description
 Displays leader-election options supported by the installation.
 @run
@@ -841,6 +934,7 @@ Displays leader-election options supported by the installation.
 
 @command Show kafka-acls native help
 @mode MODERN
+@since 0.9
 @description
 Displays Kafka ACL inspection and modification options.
 @run
@@ -849,6 +943,7 @@ Displays Kafka ACL inspection and modification options.
 
 @command Show kafka-metadata-quorum native help
 @mode KRAFT
+@since 2.8
 @description
 Displays KRaft controller-quorum operations.
 @run
@@ -857,6 +952,7 @@ Displays KRaft controller-quorum operations.
 
 @command Show kafka-features native help
 @mode KRAFT
+@since 2.7
 @description
 Displays cluster feature-version inspection and upgrade options.
 @run
@@ -865,6 +961,7 @@ Displays cluster feature-version inspection and upgrade options.
 
 @command Show kafka-metadata-shell native help
 @mode KRAFT
+@since 2.8
 @description
 Displays local KRaft metadata-shell options.
 @run
@@ -873,6 +970,7 @@ Displays local KRaft metadata-shell options.
 
 @command Show zookeeper-shell native help
 @mode LEGACY-ZK
+@since 0.8
 @description
 Displays legacy ZooKeeper shell usage supported by the installation.
 @run

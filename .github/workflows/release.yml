@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Require smoke tests
+    uses: ./.github/workflows/smoke.yml
+
+  release:
+    name: Publish verified release
+    needs: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out the tagged revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the release tag
+        id: release
+        shell: bash
+        run: |
+          version="$(LC_ALL=C awk -F"'" '/^_BASH_GOD_VERSION=/ { print $2; exit }' bash_god/core.sh)"
+          if [ -z "$version" ] || [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            printf '::error::Tag %s does not match BASH_GOD version %s.\n' "$GITHUB_REF_NAME" "${version:-unknown}"
+            exit 1
+          fi
+
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            printf '::error::Tagged commit %s is not contained in main.\n' "$GITHUB_SHA"
+            exit 1
+          fi
+
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build checksum-backed release assets
+        run: ./packaging/build-runtime.sh
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/bash-god-$VERSION.tar.gz" \
+            "dist/bash-god-$VERSION.tar.gz.sha256" \
+            'dist/install-runtime.sh' \
+            'dist/install-runtime.sh.sha256' \
+            'dist/install.sh' \
+            'dist/install.sh.sha256' \
+            --verify-tag \
+            --generate-notes \
+            --title "God Got Hands — BASH_GOD $VERSION"

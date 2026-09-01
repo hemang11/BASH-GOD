@@ -154,7 +154,7 @@ while IFS= read -r _bash_god_install_entry; do
   case "$_bash_god_install_relative" in
     ''|bin/|lib/|lib/bash-god/|lib/bash-god/bash_god/|lib/bash-god/bash_god/catalog/|share/|share/licenses/|share/licenses/bash-god/)
       ;;
-    bin/god|lib/bash-god/god|lib/bash-god/bash_god/art.sh|lib/bash-god/bash_god/catalog.sh|lib/bash-god/bash_god/core.sh|lib/bash-god/bash_god/maintenance.sh|lib/bash-god/bash_god/menu.sh|lib/bash-god/bash_god/render.sh|lib/bash-god/bash_god/search.sh|lib/bash-god/bash_god/tree.sh|share/licenses/bash-god/LICENSE)
+    bin/god|lib/bash-god/god|lib/bash-god/bash_god/art.sh|lib/bash-god/bash_god/catalog.sh|lib/bash-god/bash_god/core.sh|lib/bash-god/bash_god/discover.sh|lib/bash-god/bash_god/execute.sh|lib/bash-god/bash_god/maintenance.sh|lib/bash-god/bash_god/menu.sh|lib/bash-god/bash_god/render.sh|lib/bash-god/bash_god/resolve.sh|lib/bash-god/bash_god/search.sh|lib/bash-god/bash_god/tree.sh|share/licenses/bash-god/LICENSE)
       ;;
     lib/bash-god/bash_god/catalog/*/)
       _bash_god_install_service="${_bash_god_install_relative#lib/bash-god/bash_god/catalog/}"
@@ -191,9 +191,12 @@ for _bash_god_install_required in \
   lib/bash-god/bash_god/art.sh \
   lib/bash-god/bash_god/catalog.sh \
   lib/bash-god/bash_god/core.sh \
+  lib/bash-god/bash_god/discover.sh \
+  lib/bash-god/bash_god/execute.sh \
   lib/bash-god/bash_god/maintenance.sh \
   lib/bash-god/bash_god/menu.sh \
   lib/bash-god/bash_god/render.sh \
+  lib/bash-god/bash_god/resolve.sh \
   lib/bash-god/bash_god/search.sh \
   lib/bash-god/bash_god/tree.sh \
   share/licenses/bash-god/LICENSE; do
@@ -276,6 +279,21 @@ mv -f "$_bash_god_install_new_manifest" "$_bash_god_install_manifest"
 _bash_god_install_new_manifest=''
 
 GOD_COLOR=never "$_bash_god_install_launcher" --version >/dev/null || _bash_god_install_die 'installed CLI failed its final version check.'
+
+# Best-effort discovery for every service that declares @discover, so the
+# common case (the binary already sits at its documented default location)
+# needs no separate `god SERVICE --resync` before it can execute anything. A
+# service that is not actually installed on this machine just stays
+# display-only; that is not an install failure.
+for _bash_god_install_catalog in "$_bash_god_install_runtime/bash_god/catalog"/*/service.god; do
+  [ -f "$_bash_god_install_catalog" ] || continue
+  if LC_ALL=C grep -q '^@discover$' "$_bash_god_install_catalog" 2>/dev/null; then
+    _bash_god_install_discover_service="${_bash_god_install_catalog%/service.god}"
+    _bash_god_install_discover_service="${_bash_god_install_discover_service##*/}"
+    GOD_COLOR=never "$_bash_god_install_launcher" "$_bash_god_install_discover_service" --resync >/dev/null 2>&1 || true
+  fi
+done
+
 printf 'Installed BASH_GOD %s\n' "$_bash_god_install_version"
 printf 'Command: %s\n' "$_bash_god_install_launcher"
 if [ -n "$_bash_god_install_backup" ]; then

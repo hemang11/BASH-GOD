@@ -3,13 +3,23 @@
 @description
 A curated Kubernetes operator knowledge base for inspecting workloads, logs, configuration, events,
 rollouts, cluster context, networking, and resource usage with native kubectl commands. Commands are
-displayed as inert text and are never executed by BASH_GOD.
+shown for review and, after BASH_GOD resolves a kubectl client and you confirm, can run through the
+shared execution flow.
+
+@discover
+probe | kubectl | Client executable; presence marks a resolved kubectl installation
+root | /usr/local/bin | Common manual and Intel Homebrew install directory
+scan | /opt/homebrew | Bounded fallback for the Apple Silicon Homebrew layout
+version | kubectl version --client | Prints only the client version and never contacts a cluster
+
+@synced 1.37
 
 
 @group pods
 
 @command List pods in a namespace
 @mode MODERN
+@since 1.0
 @description
 Lists pod names, readiness, status, restart counts, and age in one namespace.
 @run
@@ -22,6 +32,7 @@ kubectl get pods -n <namespace>
 
 @command List pods with node and IP details
 @mode MODERN
+@since 1.0
 @description
 Adds pod IP, node assignment, nominated node, and readiness-gate columns to the pod list.
 @run
@@ -33,6 +44,7 @@ kubectl get pods -n <namespace> -o wide
 
 @command Watch pod status changes
 @mode MODERN
+@since 1.0
 @description
 Prints the current pod list and continues showing pod creation, deletion, and status changes.
 @run
@@ -51,6 +63,7 @@ Press Ctrl-C to stop watching.
 
 @command Describe a pod
 @mode MODERN
+@since 1.0
 @description
 Shows pod conditions, container state, probes, mounts, scheduling details, and related events.
 @run
@@ -62,6 +75,7 @@ pod | <pod_name> | Pod to inspect
 
 @command Describe a node
 @mode MODERN
+@since 1.0
 @description
 Shows node capacity, allocatable resources, conditions, taints, addresses, and scheduled pods.
 @run
@@ -72,6 +86,7 @@ node | <node_name> | Cluster-scoped node to inspect
 
 @command Describe a deployment
 @mode MODERN
+@since 1.0
 @description
 Shows deployment strategy, replica state, pod template, conditions, and rollout events.
 @run
@@ -83,6 +98,7 @@ deployment | <deployment_name> | Deployment to inspect
 
 @command Describe a service
 @mode MODERN
+@since 1.0
 @description
 Shows the service selector, cluster IP, ports, traffic policy, and selected endpoints.
 @run
@@ -97,6 +113,7 @@ service | <service_name> | Service to inspect
 
 @command Show pod logs
 @mode MODERN
+@since 1.0
 @description
 Prints the current logs from a pod's default container.
 @run
@@ -110,6 +127,7 @@ POD | <pod_name> | Pod whose logs should be displayed
 
 @command Follow pod logs
 @mode MODERN
+@since 1.0
 @description
 Prints existing logs and continues streaming new lines from the selected pod.
 @run
@@ -126,6 +144,7 @@ Press Ctrl-C to stop following logs.
 
 @command Show logs from the previous container instance
 @mode MODERN
+@since 1.0
 @description
 Prints logs from the container instance that exited before the current restart.
 @run
@@ -140,6 +159,7 @@ POD | <pod_name> | Restarted pod to inspect
 
 @command Show the latest pod log lines
 @mode MODERN
+@since 1.0
 @description
 Prints only the newest log lines instead of the entire available container log.
 @run
@@ -154,6 +174,7 @@ POD | <pod_name> | Pod whose logs should be displayed
 
 @command Follow logs from pods matching a label
 @mode MODERN
+@since 1.25
 @description
 Streams labeled pods together and prefixes each line with its source pod and container.
 @run
@@ -172,6 +193,7 @@ Press Ctrl-C to stop following logs.
 
 @command Open a shell inside a pod
 @mode MODERN
+@since 1.0
 @risk WARN
 @description
 Attaches an interactive shell to a running pod container for live troubleshooting.
@@ -194,6 +216,7 @@ Commands entered after the shell opens run inside the container. Try bash only w
 
 @command List ConfigMaps in a namespace
 @mode MODERN
+@since 1.0
 @description
 Lists ConfigMap names, data-key counts, and ages in one namespace.
 @run
@@ -204,6 +227,7 @@ kubectl get configmaps -n <namespace>
 
 @command Show a ConfigMap summary
 @mode MODERN
+@since 1.0
 @description
 Shows one ConfigMap's name, number of data entries, and age.
 @run
@@ -215,6 +239,7 @@ configmap | <configmap_name> | ConfigMap to inspect
 
 @command Show a complete ConfigMap as YAML
 @mode MODERN
+@since 1.0
 @description
 Prints metadata plus every data and binaryData entry from one ConfigMap.
 @run
@@ -227,6 +252,7 @@ configmap | <configmap_name> | ConfigMap to inspect
 
 @command Print one ConfigMap value
 @mode MODERN
+@since 1.0
 @description
 Prints only the value stored under one exact ConfigMap data key.
 @run
@@ -244,6 +270,7 @@ The go-template index form also handles keys containing dots or dashes.
 
 @command List recent namespace events
 @mode MODERN
+@since 1.28
 @description
 Shows recent Normal and Warning events in the selected namespace.
 @run
@@ -256,6 +283,7 @@ If the installed kubectl does not provide the events subcommand, use the sorted-
 
 @command List events in creation order
 @mode MODERN
+@since 1.0
 @description
 Lists namespace events sorted by their creation timestamp so the latest activity appears last.
 @run
@@ -267,6 +295,7 @@ kubectl get events -n <namespace> --sort-by=.metadata.creationTimestamp
 
 @command List recent warning events
 @mode MODERN
+@since 1.28
 @description
 Shows only recent Warning events, such as scheduling, image-pull, probe, and mount failures.
 @run
@@ -278,6 +307,7 @@ kubectl events -n <namespace> --types=Warning
 
 @command Show recent events for one pod
 @mode MODERN
+@since 1.28
 @description
 Filters recent events to those associated with one pod.
 @run
@@ -292,6 +322,7 @@ kubectl events -n <namespace> --for pod/<pod_name>
 
 @command List deployments in a namespace
 @mode MODERN
+@since 1.0
 @description
 Lists desired, current, available, and ready replica counts for deployments.
 @run
@@ -302,6 +333,7 @@ kubectl get deployments -n <namespace>
 
 @command Watch deployment rollout status
 @mode MODERN
+@since 1.0
 @description
 Waits while a deployment rollout progresses and reports whether it completes successfully.
 @run
@@ -315,6 +347,7 @@ deployment | <deployment_name> | Deployment whose latest rollout should be watch
 
 @command Show deployment rollout history
 @mode MODERN
+@since 1.0
 @description
 Lists deployment revisions and recorded change causes.
 @run
@@ -331,6 +364,7 @@ deployment | <deployment_name> | Deployment whose revisions should be listed
 
 @command Show the current Kubernetes context
 @mode MODERN
+@since 1.0
 @description
 Prints the kubeconfig context currently used by kubectl.
 @run
@@ -339,6 +373,7 @@ kubectl config current-context
 
 @command List configured Kubernetes contexts
 @mode MODERN
+@since 1.0
 @description
 Lists kubeconfig contexts with their clusters, users, namespaces, and current selection.
 @run
@@ -347,6 +382,7 @@ kubectl config get-contexts
 
 @command Switch the current Kubernetes context
 @mode MODERN
+@since 1.0
 @risk WRITE
 @description
 Changes the current context recorded in the local kubeconfig file.
@@ -360,6 +396,7 @@ This changes only the local kubeconfig selection; verify the context before runn
 
 @command List namespaces
 @mode MODERN
+@since 1.0
 @description
 Lists all namespaces visible to the current Kubernetes identity.
 @run
@@ -368,6 +405,7 @@ kubectl get namespaces
 
 @command Show the current context namespace
 @mode MODERN
+@since 1.0
 @description
 Prints the namespace configured on the current context.
 @run
@@ -384,6 +422,7 @@ No output means the context uses the default namespace.
 
 @command List services in a namespace
 @mode MODERN
+@since 1.0
 @description
 Lists service types, cluster IPs, external addresses, and exposed ports.
 @run
@@ -394,6 +433,7 @@ kubectl get services -n <namespace>
 
 @command List service endpoint slices
 @mode MODERN
+@since 1.21
 @description
 Lists the current EndpointSlice resources that connect services to backend addresses and ports.
 @run
@@ -406,6 +446,7 @@ kubectl get endpointslices -n <namespace>
 
 @command List legacy service Endpoints
 @mode MODERN
+@since 1.0
 @description
 Lists the older Endpoints objects that map services to backend addresses and ports.
 @run
@@ -418,6 +459,7 @@ The Endpoints API is deprecated in Kubernetes 1.33 and later; prefer EndpointSli
 
 @command List ingresses in a namespace
 @mode MODERN
+@since 1.0
 @description
 Lists ingress classes, hosts, addresses, ports, and ages.
 @run
@@ -428,6 +470,8 @@ kubectl get ingresses -n <namespace>
 
 @command Forward a local port to a pod
 @mode MODERN
+@since 1.0
+@risk WARN
 @description
 Keeps a local TCP port connected to one port in a selected pod for temporary access.
 @run
@@ -438,7 +482,7 @@ pod | <pod_name> | Pod receiving the forwarded connection
 <pod_port> | 8083 | Destination port inside the pod
 -n | ontic-app | Namespace containing the pod
 @notes
-The listener binds to localhost by default and runs until interrupted with Ctrl-C.
+The listener binds to localhost by default and runs until interrupted with Ctrl-C; anyone with access to that local port can reach the selected pod port while it is open.
 @end
 
 
@@ -446,6 +490,7 @@ The listener binds to localhost by default and runs until interrupted with Ctrl-
 
 @command Show pod CPU and memory usage
 @mode MODERN
+@since 1.0
 @description
 Displays current CPU and memory usage for pods in one namespace.
 @run
@@ -460,6 +505,7 @@ This requires the cluster metrics API, commonly provided by Metrics Server.
 
 @command Show node CPU and memory usage
 @mode MODERN
+@since 1.0
 @description
 Displays current CPU and memory usage and utilization percentages for every node.
 @run
@@ -473,6 +519,7 @@ This requires the cluster metrics API, commonly provided by Metrics Server.
 
 @command Preview manifest differences
 @mode MODERN
+@since 1.13
 @description
 Shows how a manifest differs from live resources without applying those changes.
 @run
@@ -485,6 +532,7 @@ kubectl diff exits with status 1 when differences are found and status greater t
 
 @command Apply a manifest
 @mode MODERN
+@since 1.0
 @risk WRITE
 @description
 Creates resources that do not exist and updates matching live resources from a manifest.
@@ -501,6 +549,7 @@ Review kubectl diff and verify the current context and namespace before applying
 
 @command Show top-level kubectl native help
 @mode MODERN
+@since 1.0
 @description
 Displays kubectl commands and global options supported by the installed client.
 @run
@@ -509,6 +558,7 @@ kubectl --help
 
 @command Show kubectl get native help
 @mode MODERN
+@since 1.0
 @description
 Displays resource listing, selectors, watching, and output-format options.
 @run
@@ -517,6 +567,7 @@ kubectl get --help
 
 @command Show kubectl describe native help
 @mode MODERN
+@since 1.0
 @description
 Displays options for detailed resource descriptions and label selection.
 @run
@@ -525,6 +576,7 @@ kubectl describe --help
 
 @command Show kubectl logs native help
 @mode MODERN
+@since 1.0
 @description
 Displays log selection, container, time-range, follow, and output options.
 @run
@@ -533,6 +585,7 @@ kubectl logs --help
 
 @command Show kubectl exec native help
 @mode MODERN
+@since 1.0
 @description
 Displays container selection, terminal, and remote-command options.
 @run
@@ -541,6 +594,7 @@ kubectl exec --help
 
 @command Show kubectl events native help
 @mode MODERN
+@since 1.28
 @description
 Displays event filtering, resource selection, and watch options.
 @run
@@ -549,6 +603,7 @@ kubectl events --help
 
 @command Show kubectl rollout native help
 @mode MODERN
+@since 1.0
 @description
 Displays deployment rollout status, history, restart, pause, resume, and undo operations.
 @run
@@ -557,6 +612,7 @@ kubectl rollout --help
 
 @command Show kubectl config native help
 @mode MODERN
+@since 1.0
 @description
 Displays kubeconfig context, cluster, user, and preference operations.
 @run
@@ -565,6 +621,7 @@ kubectl config --help
 
 @command Show kubectl port-forward native help
 @mode MODERN
+@since 1.0
 @description
 Displays supported resource targets, port mappings, and listener-address options.
 @run
@@ -573,6 +630,7 @@ kubectl port-forward --help
 
 @command Show kubectl apply native help
 @mode MODERN
+@since 1.0
 @description
 Displays manifest input, validation, dry-run, field-management, and apply options.
 @run
@@ -581,6 +639,7 @@ kubectl apply --help
 
 @command Explain a Kubernetes resource schema
 @mode MODERN
+@since 1.0
 @description
 Displays fields and descriptions for one resource type using the cluster's API schema.
 @run

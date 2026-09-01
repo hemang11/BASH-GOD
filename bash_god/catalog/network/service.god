@@ -2,7 +2,10 @@
 
 @description
 Curated network knowledge for interfaces, routes, listening ports, DNS, connectivity, HTTP, and
-SSH. Commands are displayed as inert text and are never executed by BASH_GOD.
+SSH. A plain interactive search lets an operator review, edit, and explicitly run a selected
+command through tools on PATH.
+
+@execution PATH
 
 
 @group interfaces
@@ -194,8 +197,10 @@ HOST | <host> | Hostname or IP address to test
 @description
 Shows the sequence of routers reached on the path toward one host.
 @run
-traceroute <host>
+traceroute -m 10 -w 2 <host>
 @params
+-m | 10 | Stop after ten hops instead of waiting for the platform default
+-w | 2 | Wait at most two seconds for each probe response
 HOST | <host> | Hostname or IP address whose route should be traced
 @end
 
@@ -279,6 +284,7 @@ openssl s_client -connect <host>:<port_number> -servername <host> </dev/null
 
 @command Connect to a host through SSH
 @mode LOCAL
+@risk WARN
 @description
 Starts a normal SSH session using the selected user and resolvable hostname.
 @run
@@ -292,6 +298,7 @@ Agent forwarding is not enabled; do not add -A unless the environment explicitly
 
 @command Connect to SSH on a non-default port
 @mode LOCAL
+@risk WARN
 @description
 Starts an SSH session when the server is listening somewhere other than TCP port 22.
 @run
@@ -300,10 +307,13 @@ ssh -p <port_number> <user>@<host>
 -p | <port_number> | Remote SSH port
 USER | <user> | Remote login user
 HOST | <host> | Remote hostname or IP address
+@notes
+Starts an interactive remote shell; verify the host, user, and port before connecting.
 @end
 
 @command Diagnose an SSH connection verbosely
 @mode LOCAL
+@risk WARN
 @description
 Shows configuration selection, key negotiation, authentication attempts, and connection progress.
 @run
@@ -318,6 +328,7 @@ Verbose logs reveal hostnames, usernames, key fingerprints, and configuration pa
 
 @command Connect through an SSH jump host
 @mode LOCAL
+@risk WARN
 @description
 Uses one approved bastion or jump host to reach a target host without enabling agent forwarding.
 @run
@@ -325,10 +336,13 @@ ssh -J <jump_user>@<jump_host> <target_user>@<target_host>
 @params
 -J | <jump_user>@<jump_host> | SSH jump host and login user
 TARGET | <target_user>@<target_host> | Final SSH destination
+@notes
+Starts an interactive remote shell through the selected jump host; verify both destinations before connecting.
 @end
 
 @command Connect with one explicit SSH identity
 @mode LOCAL
+@risk WARN
 @description
 Uses one selected private key and prevents the client from offering unrelated agent identities.
 @run

@@ -1,12 +1,15 @@
 # BASH_GOD Knowledge Base Architecture
 
-**Status:** Implemented in BASH_GOD 0.0.1.5
+**Status:** Implemented in BASH_GOD 0.0.2.0. Reviewed execution is now generic across the current
+service catalogs.
 
 ## Context / Problem
 
 BASH_GOD solves a memory problem: remembering the right native DevOps command when it is needed. Searching chat, notes, browser history, and shell history is slow, while wrapping every native CLI would create another interface to learn.
 
-> BASH_GOD is a curated memory layer for frequently used DevOps operations. It displays native commands and never executes catalogued recipes.
+> BASH_GOD shows you the resolved command and runs it only after you confirm. It never runs anything
+> you have not seen and approved. Discoverable catalogs resolve one tool family; PATH catalogs use the
+> same reviewed picker through the caller's normal lookup. Every catalog command remains copy-ready.
 
 The operator copies a command, replaces placeholders, reviews warnings, and runs it directly. Native CLIs remain the source of truth; their help commands can be catalogued like any other command.
 
@@ -20,15 +23,20 @@ The operator copies a command, replaces placeholders, reviews warnings, and runs
 - Keep one readable `.god` file per platform.
 - Add platforms and commands without changing the dispatcher.
 - Parse catalogs as inert text and remain silent when sourced.
+- For a service that declares `@discover`, resolve the install path and version once; for one that
+  declares `@execution PATH`, use normal PATH lookup without inventing a product version. In either
+  case, fill in values safely and run only the reviewed command.
 
 ## Non-goals
 
-- Executing or wrapping Kafka, MongoDB, Kubernetes, AWS, SSH, or other tools.
 - Accepting native operational arguments through `god`.
 - Treating command titles as executable subcommands.
 - Reproducing every native CLI option.
-- Discovering hosts, opening SSH sessions, or changing state.
-- Providing orchestration or dry-run behavior today.
+- Discovering hosts, opening SSH sessions, or changing state on a service's behalf beyond what a
+  confirmed command itself does.
+- Providing orchestration, scheduling, or dry-run behavior.
+- Adding a service-specific execution fork. Catalog metadata selects the one shared engine; a catalog
+  with neither execution marker remains copy-ready and display-only.
 
 ## Decision / Implementation Summary
 
@@ -82,7 +90,10 @@ bare interactive god / god --uninstall
        verified BASH_GOD release assets only
 ```
 
-No path continues from catalog command text to a native CLI.
+Catalog command text reaches a native CLI only through the generic reviewed-execution path: an
+interactive search picker shows the complete resolved command, the operator explicitly chooses it,
+and the engine launches it with user values carried as positional arguments. Every other renderer
+remains inert and copy-ready.
 
 ## Key Components
 
@@ -131,17 +142,21 @@ bash_god/
 - `maintenance.sh` owns cached direct-GitHub update checks and complete BASH_GOD removal. It runs in
   a dedicated Bash process and never receives catalog command text.
 - `catalog.sh` owns catalog discovery, service-route resolution, and grammar validation.
+- `discover.sh` owns generic discoverable-tool resolution, version capture, and its cache.
 - `art.sh` owns the pre-rendered six-line identity and its TTY gate; sourcing it is silent and only
   bare `god` may render it.
 - `render.sh` owns normal root, service, group, and command views.
 - `search.sh` owns query parsing, matching, ranking, list/tree/detail search views, and search help.
+- `menu.sh` owns the in-place rich picker and normal command editor handoff.
+- `resolve.sh` owns safe placeholder/config resolution and discovered-probe rewrites.
+- `execute.sh` owns terminal handoff and reviewed command launch.
 - `tree.sh` owns root, service, and group hierarchy rendering.
 - `catalog/general/service.god` holds host, operating-system, process, file, and resource knowledge.
 - `catalog/network/service.god` holds vendor-neutral interfaces, ports, DNS resolvers, connectivity,
   HTTP, and SSH knowledge.
 - `catalog/aws/service.god` holds AWS identity and read-only Route 53 inventory knowledge.
 - Elasticsearch, Kubernetes, Kafka, and MongoDB each own the matching service catalog directory.
-- `tests/smoke.sh` verifies that BASH_GOD only shows catalog knowledge in Bash and zsh.
+- `tests/smoke.sh` is the stable entrypoint for static and fake-only execution regression suites.
 - `packaging/tests/` verifies release construction, one-line installation, update decisions,
   cancellation, and full owned-path purge under isolated prefixes.
 - Existing aliases and functions remain in `BASH_GOD.sh`; the knowledge layer does not reinterpret them.
@@ -157,11 +172,20 @@ A platform file contains metadata followed by ordered groups and command records
 ```text
 @title Kafka commands
 @description
-Curated Kafka commands. BASH_GOD never executes them.
+Curated Kafka commands. Shown for review and, once you confirm, run against the resolved install.
+
+@discover
+probe | kafka-topics.sh | Core topic-management tool; presence marks a resolved install
+root | /opt/kafka/bin | Common install layout
+scan | /opt | Bounded scan root when the common layout is absent
+version | kafka-topics.sh --version | Prints the installed version
+
+@synced 3.9
 
 @group offset
 @command Show consumer-group offsets and lag
 @mode MODERN
+@since 0.10.1
 @description
 Shows committed offsets, log-end offsets, and lag.
 @run
@@ -178,20 +202,38 @@ Add client properties when the cluster requires them.
 Rules:
 
 - One `@title` and top-level `@description` must precede all groups.
+- An optional top-level `@discover` block (probe/root/scan/version rows) marks one discovered tool
+  family executable. `@execution PATH` marks a multi-tool PATH catalog executable. They are mutually
+  exclusive, must appear before all groups, and a catalog with neither stays display-only.
+- An optional top-level `@synced VERSION` records which version the catalog was last verified
+  against. It only ever warns; it never filters.
 - Every `@group NAME` creates an exact navigable group route.
 - Every `@command TITLE` requires `@mode`, non-empty `@description`, and exactly one physical `@run` line.
+  In a catalog with `@discover`, every command also requires `@since VERSION`; service-neutral local
+  rows use `@since 0.0`.
 - `@mode` is `LOCAL`, `MODERN`, `LEGACY-ZK`, or `KRAFT`. It remains searchable metadata, but the
   terminal renderer keeps normal modes visually silent and displays only `LEGACY-ZK` as `[LEGACY]`.
+  `LOCAL` also exempts a record from path resolution and version filtering.
+- Per-command `@since VERSION` and optional `@until VERSION` state the version range a record is
+  known to support. In discovery catalogs `@since` is mandatory. Search keeps an out-of-range row
+  visible with its reason but disables execution and editing. Optional `@intent SLUG` links
+  same-purpose records across versions so the preferred in-range form is identified.
+- `@runnable NO` keeps one record copy-only. It requires a non-empty `@notes` explanation and blocks
+  picker edit/run while retaining a searchable, copy-ready command.
 - `@params` and `@optional` rows use `NAME | EXAMPLE | MEANING`.
 - `@risk WRITE`, `@risk WARN`, and `@risk DELETE` distinguish normal writes, high-impact non-delete
   operations, and removals.
-- `@notes` is optional.
+- `@notes` is optional. It is required for `@runnable NO`, where the selected picker panel shows it
+  as the copy-only explanation.
 - `@end` closes each command record.
 - Group names and command titles are unique within their scopes, ignoring case.
 
-Catalogs are never sourced, evaluated, passed to a shell, or sent to an operational executable. Only
-regular, non-symlink files at `catalog/<valid-service-name>/service.god` are accepted. The parent
-directory becomes the exact case-insensitive service route.
+The catalog file itself is never sourced, evaluated as code, or treated as anything but text: parsing
+it can never run a line it contains. In BASH_GOD 0.0.2.0, the *value* of one reviewed `@run` line is
+handed to a child shell as an argument-safe template for catalogs declaring
+`@discover` or `@execution PATH`; all other views stop at the screen. Only regular, non-symlink files
+at `catalog/<valid-service-name>/service.god` are accepted. The parent directory becomes the exact
+case-insensitive service route.
 
 ## Flow / Behavior
 
@@ -295,6 +337,42 @@ service and group, `--tree --full` adds each matching `@run` line, `--details` e
 and `--help` or `--keys` opens search-specific usage. A literal query token that looks like a view
 flag can follow `--` to end option parsing.
 
+Once a version is detected for a service, each result is checked against its own `@since`/`@until`
+range after scoring. Out-of-range matches stay in their relevance position, show the exact required
+or last-supported version, and cannot be run or edited. `@intent` twins identify the preferred
+in-range form without a service-level compatibility summary. A service with no detected version, or
+no `@discover` block, applies no version policy. `--all-versions` exposes every variant but does not
+make an incompatible row executable; `@synced` never filters, only warns when the detected version
+exceeds it.
+
+### Execution (generic, 0.0.2.0)
+
+A view key (`--tree`, `--details`, `--keys`, `--help`, `--full`) never offers execution, on any
+service, at any scope — those routes only ever render text. Only the plain `q`/`-q` route, with no
+view key, on a TTY, offers to run a result:
+
+1. **Determine capability.** `@discover` resolves the declared probe against its declared root,
+   then PATH, then a bounded scan, caching the directory and version. A search makes only a cheap
+   freshness check; `god SERVICE --resync` forces a fresh probe and `god --paths` lists discovered
+   directories. `@execution PATH` intentionally has no discovery or product version: its commands
+   retain their catalog spelling and use the caller's PATH. An unresolved discovery catalog, a catalog
+   with neither marker, or an unusable terminal retains the static `MATCHING OPERATIONS` table.
+2. A capable result opens one **in-place interactive picker**: the caller's terminal keeps the
+   BASH_GOD-framed search title and subtitle, the list contains compact titles, and the highlighted
+   title owns a word-wrapped `$ <resolved command>` panel. It never enters an alternate terminal
+   screen. Arrow keys repaint only the changed rows and panel; `e` opens a normal line editor seeded
+   with the complete command, Enter runs the reviewed command, and Escape cancels promptly.
+3. **Resolve and execute** (`bash_god/resolve.sh`, `bash_god/execute.sh`) safely prepare each selected
+   command. A discovered catalog may rewrite only its declared leading probe to the resolved absolute
+   path; static catalog text remains copyable. `@params` become positional argument slots, including
+   values embedded inside quoted URLs or JSON, so query/config/prompt values never become shell syntax.
+   Any remaining placeholder is prompted only after selection in the same terminal flow. Native stdout
+   and stderr stream directly to the terminal, and child exit status and Ctrl-C are preserved. A
+   `@runnable NO` row or a shell-state operation (`cd`, `export`, `unset`, `source`) remains copy-only
+   and cannot be edited or launched.
+
+No terminal, no execution: all non-search views remain inert, copy-ready renderers.
+
 ### Routing and exit codes
 
 Service and group names require exact matches but ignore case, so `god KAFKA OFFSET` resolves normally. Partial names are search terms, not routes. Unknown routes return contextual help and never guess.
@@ -306,7 +384,7 @@ with examples for the current scope. The routing invariant is that `--help`, `--
 changing the selected view; `-q` remains the query route. `--full` always modifies `--tree`;
 `<number>` always requires numbered group rows. `god --version`
 and root-level `god -v` print only
-`BASH_GOD 0.0.1.5` and `License: MIT`; they do not report the host shell version.
+`BASH_GOD 0.0.2.0` and `License: MIT`; they do not report the host shell version.
 
 - `0`: successful display or search with matches.
 - `1`: valid search with no matches.
@@ -360,6 +438,11 @@ systemctl status mongod
 
 After validation, root help, `god mongo`, tree, and search discover it automatically. Use placeholders such as `<database_name>` for local values; never put secrets in a catalog.
 
+Adding `@discover` or `@execution PATH` to a new service's catalog opts it into the same execution
+engine — nothing service-specific to write. See `bash_god/AGENTS.md`'s Execution Metadata section for
+the directive grammar and `bash_god/docs/service-sync.md` for keeping a discovery catalog's version
+metadata current as its native tool changes.
+
 ## Verification
 
 - Root, service, group, numbered entry, help, details, compact tree, full command tree, and contextual
@@ -373,7 +456,9 @@ After validation, root help, `god mongo`, tree, and search discover it automatic
 - Silent sourcing in Bash and zsh.
 - Catalog validation and inert handling of command text.
 - Automatic color, authoritative `NO_COLOR`, forced color modes, and ASCII fallback for normal views.
-- Copy-ready wrapping without invoking Kafka or another native tool.
+- Copy-ready display verified without invoking Kafka or another native tool; the execution path
+  (discovery, resolution, injection-safety, resolved-picker review, no-TTY-refuses) is verified
+  separately against synthetic fixtures, never against a live service.
 - Pre-rendered artwork only for bare TTY `god`, exact slogan rendering, global `--quiet`, and
   logo-free help, scoped, redirected, piped, and error views.
 - Manifest-gated update/removal, silent offline checks, explicit update choice, default-cancel
@@ -391,7 +476,10 @@ After validation, root help, `god mongo`, tree, and search discover it automatic
 - Renderers use fixed widths rather than detecting terminal width.
 - The pre-rendered logo uses Unicode block characters; `--quiet` provides a decoration-free view for
   terminals where those glyphs are undesirable.
-- BASH_GOD neither substitutes placeholders nor validates copied commands.
-- Warnings cannot prevent an operator from running a risky command.
+- A catalog with neither `@discover` nor `@execution PATH` remains copy-only. Across executable
+  catalogs, resolve.sh binds a value only when the query names that slot's keyword unambiguously;
+  anything less certain stays a placeholder to fill in by hand.
+- Warnings cannot prevent an operator from running a risky command; the risk label remains visible
+  on the picker row, and Enter runs the command the operator just reviewed.
 - Automatic update and `god --uninstall` apply only to direct GitHub installations carrying the
   matching ownership manifest. Package managers and source checkouts retain ownership of their files.

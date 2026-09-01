@@ -9,7 +9,7 @@
 ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝    ╚═════╝  ╚═════╝ ╚═════╝
 ```
 
-**Your DevOps command memory. Searchable, copy-ready native commands. Zero execution.**
+**Your DevOps command memory. Searchable, copy-ready native commands — with reviewed execution when a service supports it.**
 
 [![GitHub release](https://img.shields.io/github/v/release/hemang11/BASH-GOD?style=flat-square&label=release&color=f6c344)](https://github.com/hemang11/BASH-GOD/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-f6c344?style=flat-square)](LICENSE)
@@ -17,25 +17,36 @@
 
 Stop searching Slack, old notes, and shell history for the command you used six months ago.
 
-BASH_GOD keeps curated DevOps commands in a searchable local catalog. It shows you what to run, what it does, and what each parameter means. It never executes catalog commands for you.
+BASH_GOD keeps curated DevOps commands in a searchable local catalog. It shows you what to run, what it does, and what each parameter means. It never runs anything you have not seen and approved.
 
-> BASH_GOD is a curated memory layer and orchestrator for frequently used DevOps operations. Native CLIs remain the source of truth and are always accessible through native-help commands.
+> BASH_GOD shows you the resolved command and runs it only after you confirm. Discoverable services
+> resolve their installed tool family and version; PATH services use the same reviewed picker through
+> your normal shell lookup. Every catalog command remains copy-ready, and native CLIs remain the
+> source of truth.
 
 ## See it in action
 
-```console
-$ god q "consumer lag"
+```text
+$ god kafka -q "consumer lag"
 
-OPEN                     OPERATION
------------------------- ----------------------------------------------
-god kafka offset 1       Show consumer-group offsets and lag
+╭────────────────────────────────────────────────────────────────────────╮
+│ KAFKA SEARCH RESULTS                                                   │
+│ Smart search: consumer lag                                             │
+╰────────────────────────────────────────────────────────────────────────╯
 
-$ god kafka offset 1
+  ❯ Show consumer-group offsets and lag
+    Show latest offsets for a topic [needs v3.0+ (have v1.1.0)]
 
-$ ./kafka-consumer-groups.sh --bootstrap-server localhost:9092 --command-config ../config/consumer.properties --group connections --describe
+  Show consumer-group offsets and lag
+  $ /path/to/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --group connections --describe
+  ↑/↓ move · e edit · enter run · esc cancel
 ```
 
-BASH_GOD finds the native command. You decide whether to copy and run it.
+On a TTY, compatible runnable results open this in-place picker. Arrow keys change the selection,
+`e` opens your normal terminal line editor with the complete command already there, Enter runs the
+reviewed command, and Escape leaves immediately. Native stdout, stderr, exit status, and Ctrl-C pass
+through unchanged. A tool that cannot be resolved falls back to the ordinary copy-ready search
+results; no execution is offered.
 
 ## Install
 
@@ -79,15 +90,17 @@ god                              # Discover services
 god kafka                        # Browse Kafka knowledge
 god kafka offset                 # See copy-ready offset commands
 god kafka offset 1               # Explain one displayed command
-god kafka q "Get all consumers in a broker"  # Search Kafka by remembered intent
+god kafka q "Get all consumers in a broker"  # Search by remembered intent — on a TTY, pick, edit, or run a row
 god kafka --tree --full          # Show the full Kafka command tree
+god --paths                      # See what BASH_GOD has resolved on this machine
+god kafka --resync               # Force a fresh probe if Kafka moved
 ```
 
 | What you remember | What to type |
 |---|---|
 | The service | `god mongo` |
 | The service and subject | `god k8s describe` |
-| Remembered Kafka intent | `god kafka q "Get all consumers in a broker"` |
+| Remembered service intent | `god kafka q "Get all consumers in a broker"` |
 | A regular expression | `god q --regex 'offset\|lag'` |
 | Everything below a route | `god kafka native --tree --full` |
 
@@ -97,13 +110,13 @@ Search is case-insensitive and checks command titles, descriptions, native synta
 
 | Area | Start here |
 |---|---|
-| AWS identity and Route 53 | `god aws` |
-| Elasticsearch | `god elasticsearch` |
-| Host, CPU, memory, disk, and processes | `god general` |
-| Kubernetes | `god k8s` |
-| Kafka | `god kafka` |
-| MongoDB | `god mongo` |
-| Networking, DNS, HTTP, and SSH | `god network` |
+| AWS identity and Route 53 (executable when the AWS CLI resolves) | `god aws` |
+| Elasticsearch (executable through PATH) | `god elasticsearch` |
+| Host, CPU, memory, disk, and processes (executable through PATH) | `god general` |
+| Kubernetes (executable when kubectl resolves) | `god k8s` |
+| Kafka (executable when its installation resolves) | `god kafka` |
+| MongoDB (executable when mongosh resolves; shell snippets stay copy-only) | `god mongo` |
+| Networking, DNS, HTTP, and SSH (executable through PATH) | `god network` |
 
 The catalog is deliberately curated around common operational work rather than every flag in every manual. Each service has a `native` group when you need the installed tool's full help.
 
@@ -112,13 +125,21 @@ The catalog is deliberately curated around common operational work rather than e
 ```text
 god / BASH_GOD.sh
 ├── routing · search · rendering · tree views
+├── discovery · compatibility · safe placeholder resolution
 │        └── bash_god/catalog/<service>/service.god
+├── in-place picker · normal command editor · reviewed execution
 └── managed install/update/removal · bash_god/maintenance.sh
 ```
 
 Every service owns one plain-text catalog. The same records power browsing, search, help, details, numbered explanations, and tree views, so there is no second command registry to maintain.
 
-Catalog files are parsed as data. They are never sourced, evaluated, or passed to a native CLI.
+Catalog files are parsed as data; the file itself is never sourced or evaluated as code. A service
+that declares `@discover` runs only after its tool family resolves. Its detected native version is
+checked against each command's declared support range, so incompatible rows show why beside their
+title and remain copy-ready but cannot be edited or run. A service that declares `@execution PATH`
+uses the same reviewed picker through normal PATH lookup. In both cases, the value of a confirmed
+`@run` line is passed as an argument-safe template—never before you have seen and approved it.
+Catalogs without either marker stay display-only.
 
 ## Add your own command
 
@@ -148,20 +169,30 @@ See the [catalog contribution guide](bash_god/AGENTS.md) for parameters, optiona
 
 ## Safety
 
-- BASH_GOD displays catalog commands; it does not execute them.
-- The only executable workflow owned by `god` is its own managed update and removal; it never executes an `@run` catalog entry.
-- Replace every `<placeholder>` before copying.
-- `WRITE`, `WARN`, and `DELETE` describe the native command's impact.
+- BASH_GOD displays catalog commands. Services that declare `@discover` or `@execution PATH` can
+  also run one—but only after the complete command is visible in the in-place interactive picker;
+  press `e` to edit it in a normal readline prompt or Enter to run the selected row. Incompatible,
+  copy-only, unresolved, and display-only rows cannot execute.
+- Values BASH_GOD fills in from your query or a prompt are never turned into shell syntax: they are
+  passed as arguments to the command, not interpolated into its text.
+- `WRITE`, `WARN`, and `DELETE` describe the native command's impact and stay visible on the selected
+  picker row; they do not block execution once the operator presses Enter.
+- A record that only changes a child shell's state (`cd`, `export`, `unset`, `source`) is never
+  offered for execution; it is shown with a note instead.
+- Copy-only records, such as raw MongoDB shell snippets, remain searchable and copyable but cannot
+  be edited or run from the picker.
+- No terminal, no execution — the interactive picker and any value prompts require one, always.
+- Replace every `<placeholder>` BASH_GOD did not fill in before running or copying a command.
 - Never put credentials, tokens, private keys, authenticated URIs, or production payloads in a catalog.
-- Once copied, a command is governed by the native tool, your identity, and your current environment.
+- Once copied or run, a command is governed by the native tool, your identity, and your current environment.
 
 ## Verification
 
 The test suite renders catalog knowledge but never runs the displayed native commands:
 
 ```bash
-bash -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/smoke.sh
-zsh -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/smoke.sh
+bash -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh packaging/*.sh packaging/tests/*.sh
+zsh -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh packaging/*.sh packaging/tests/*.sh
 ./bash_god/tests/smoke.sh
 ./packaging/tests/runtime-package-smoke.sh
 ./packaging/tests/install-smoke.sh

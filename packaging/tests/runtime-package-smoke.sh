@@ -131,9 +131,12 @@ lib/bash-god/bash_god/catalog/kafka/service.god
 lib/bash-god/bash_god/catalog/mongo/service.god
 lib/bash-god/bash_god/catalog/network/service.god
 lib/bash-god/bash_god/core.sh
+lib/bash-god/bash_god/discover.sh
+lib/bash-god/bash_god/execute.sh
 lib/bash-god/bash_god/maintenance.sh
 lib/bash-god/bash_god/menu.sh
 lib/bash-god/bash_god/render.sh
+lib/bash-god/bash_god/resolve.sh
 lib/bash-god/bash_god/search.sh
 lib/bash-god/bash_god/tree.sh
 lib/bash-god/god
@@ -143,9 +146,9 @@ if [ "$_bash_god_package_actual_files" = "$_bash_god_package_expected_files" ] &
    [ -x "$_bash_god_package_prefix/bin/god" ] && \
    [ ! -L "$_bash_god_package_prefix/bin/god" ] && \
    [ -x "$_bash_god_package_prefix/lib/bash-god/god" ]; then
-  _bash_god_package_pass 'installed runtime matches the 19-file allowlist'
+  _bash_god_package_pass 'installed runtime matches the 22-file allowlist'
 else
-  _bash_god_package_fail 'installed runtime matches the 19-file allowlist'
+  _bash_god_package_fail 'installed runtime matches the 22-file allowlist'
 fi
 
 _bash_god_package_manifest="$(command cat "$_bash_god_package_prefix/share/bash-god/install-manifest")"

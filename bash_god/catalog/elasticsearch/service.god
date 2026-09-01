@@ -1,8 +1,10 @@
 @title Elasticsearch commands
 
 @description
-Curated Elasticsearch host checks and read-only REST API operations. Commands are displayed as
-inert text and are never executed by BASH_GOD.
+Curated Elasticsearch host checks and read-only REST API operations. A plain interactive search
+lets an operator review, edit, and explicitly run a selected command through tools on PATH.
+
+@execution PATH
 
 
 @group service

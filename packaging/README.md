@@ -26,7 +26,7 @@ checksum-verified archive.
 bash-god-VERSION/
   bin/god                              relocatable prefix launcher
   lib/bash-god/god                     repository CLI launcher
-  lib/bash-god/bash_god/*.sh           seven runtime modules, including maintenance
+  lib/bash-god/bash_god/*.sh           eleven runtime modules, including discovery and execution
   lib/bash-god/bash_god/catalog/*/service.god
   share/bash-god/install-manifest      direct-GitHub ownership metadata
   share/licenses/bash-god/LICENSE
@@ -58,11 +58,26 @@ install.sh.sha256
 
 The builder writes all six listed assets beneath `dist/`. It refuses to overwrite existing files or
 dangling symlinks. The package smoke test builds from scratch, verifies both executable script
-assets and all relevant checksums, installs beneath a temporary prefix, compares the exact 18-file
+assets and all relevant checksums, installs beneath a temporary prefix, compares the exact 22-file
 installed allowlist, checks for credential material, exercises navigation/search/tree views with an
 empty environment, rejects malformed packages and checksums, and verifies that replacement requires
 `--replace` and retains a usable previous runtime. The install and maintenance suites use isolated
 homes and prefixes; they never change a real installation.
+
+## Automated Quality Gates
+
+`.github/workflows/smoke.yml` runs the main command-memory suite and all three packaging suites for
+every pull request into `main`, every update to `main`, and every merge-queue candidate. The stable
+required-check name is **Full smoke suite**.
+
+`.github/workflows/release.yml` runs only for `v*` tags. It calls the same smoke workflow first,
+checks that `vVERSION` matches `bash_god/core.sh`, rejects a tagged commit that is not contained in
+`main`, builds the six release assets, and creates the GitHub Release only after every check passes.
+
+GitHub Actions cannot make its own check mandatory. In the repository's `main` branch ruleset,
+enable **Require a pull request before merging** and require the **Full smoke suite** status check.
+That one-time repository setting turns the workflow result into the merge gate; without it, the
+workflow reports failures but GitHub can still allow a merge.
 
 ## Public Installation
 
@@ -119,12 +134,12 @@ cache, state, and data. It refuses source checkouts and package-manager-owned in
 
 ## Release Checklist
 
-1. Confirm the version in `bash_god/core.sh` and use the matching immutable tag `vVERSION`.
-2. Run the main smoke suite plus the runtime-package, install, and maintenance smoke suites.
-3. Build into a clean `dist/` directory.
-4. Publish the archive, low-level installer, public bootstrap, and all three `.sha256` files as release
-   assets.
-5. Download the public assets and repeat an isolated-prefix install before announcing the release.
+1. Merge through a pull request whose required **Full smoke suite** check passed.
+2. Confirm the version in `bash_god/core.sh` and push the matching immutable tag `vVERSION` from
+   `main`.
+3. Let the release workflow repeat every smoke suite, build the clean assets, and publish the archive,
+   both installers, public bootstrap, and all three `.sha256` files.
+4. Download the public assets and repeat an isolated-prefix install before announcing the release.
 
 The same prefix layout can later be consumed by RPM and DEB packaging without changing the runtime
 catalog or dispatcher. This first release supports direct real-file installation only; Homebrew's

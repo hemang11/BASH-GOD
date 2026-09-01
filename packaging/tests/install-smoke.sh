@@ -33,6 +33,7 @@ prefix="$temporary/prefix"
 test_home="$temporary/home"
 fake_bin="$temporary/bin"
 mkdir -p "$assets" "$test_home" "$fake_bin"
+test_path="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 if "$repo_dir/packaging/build-runtime.sh" "$assets" >/dev/null; then
   pass 'release assets build for the public installer test'
@@ -85,7 +86,7 @@ install_output="$(
   BASH_GOD_PREFIX="$prefix" \
   BASH_GOD_TEST_ASSETS="$assets" \
   BASH_GOD_TEST_VERSION="$version" \
-  PATH="$fake_bin:$PATH" \
+  PATH="$test_path" \
   bash "$repo_dir/packaging/install.sh"
 )"
 if contains "$install_output" 'Checksums verified.' && \
@@ -112,7 +113,7 @@ current_output="$(
   BASH_GOD_PREFIX="$prefix" \
   BASH_GOD_TEST_ASSETS="$assets" \
   BASH_GOD_TEST_VERSION="$version" \
-  PATH="$fake_bin:$PATH" \
+  PATH="$test_path" \
   bash "$repo_dir/packaging/install.sh"
 )"
 if [ "$current_output" = "BASH_GOD $version is already installed and current." ] && \
@@ -133,7 +134,7 @@ upgrade_output="$(
   BASH_GOD_PREFIX="$prefix" \
   BASH_GOD_TEST_ASSETS="$assets" \
   BASH_GOD_TEST_VERSION="$version" \
-  PATH="$fake_bin:$PATH" \
+  PATH="$test_path" \
   bash "$repo_dir/packaging/install.sh"
 )"
 backup="$(command find "$prefix/lib" -maxdepth 1 -type d -name 'bash-god.backup-*' -print | LC_ALL=C awk 'NR == 1 { print; exit }')"
@@ -154,7 +155,7 @@ HOME="$test_home" \
 BASH_GOD_PREFIX="$partial_prefix" \
 BASH_GOD_TEST_ASSETS="$assets" \
 BASH_GOD_TEST_VERSION="$version" \
-PATH="$fake_bin:$PATH" \
+PATH="$test_path" \
 bash "$repo_dir/packaging/install.sh" >/dev/null 2>&1 || partial_status=$?
 if [ "$partial_status" -eq 1 ] && [ ! -e "$partial_prefix/lib/bash-god" ]; then
   pass 'public installer refuses partial or unmanaged destination files'

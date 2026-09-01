@@ -1,0 +1,50 @@
+name: Smoke tests
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  merge_group:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Full smoke suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install the supported interactive shell
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes zsh
+
+      - name: Validate shell syntax
+        run: |
+          bash -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh packaging/*.sh packaging/tests/*.sh
+          zsh -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh packaging/*.sh packaging/tests/*.sh
+
+      - name: Run command-memory smoke tests
+        run: bash bash_god/tests/smoke.sh
+
+      - name: Run runtime-package smoke tests
+        run: bash packaging/tests/runtime-package-smoke.sh
+
+      - name: Run public-install smoke tests
+        run: bash packaging/tests/install-smoke.sh
+
+      - name: Run maintenance smoke tests
+        run: bash packaging/tests/maintenance-smoke.sh

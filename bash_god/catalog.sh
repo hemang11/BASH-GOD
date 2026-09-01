@@ -103,6 +103,54 @@ _god_validate_catalog() {
       }
     }
 
+    # Dotted numeric comparison. Missing components count as zero, so 3.9 and
+    # 3.9.0 are equal and neither is treated as the newer release.
+    function version_compare(left, right, left_parts, right_parts, left_count, right_count, position, total, left_value, right_value) {
+      left_count = split(left, left_parts, /\./)
+      right_count = split(right, right_parts, /\./)
+      total = left_count > right_count ? left_count : right_count
+      for (position = 1; position <= total; position++) {
+        left_value = position <= left_count ? left_parts[position] + 0 : 0
+        right_value = position <= right_count ? right_parts[position] + 0 : 0
+        if (left_value > right_value) return 1
+        if (left_value < right_value) return -1
+      }
+      return 0
+    }
+
+    function validate_discover_row(line, count, parts, key, value, head) {
+      count = split(line, parts, /\|/)
+      if (count != 3 || trim(parts[1]) == "" || trim(parts[2]) == "" || trim(parts[3]) == "") {
+        fail("invalid @discover row on line " NR "; expected KEY | VALUE | MEANING")
+        return
+      }
+
+      key = trim(parts[1])
+      value = trim(parts[2])
+      if (key !~ /^(probe|root|scan|version)$/) {
+        fail("unknown @discover key \"" key "\" on line " NR "; expected probe, root, scan, or version")
+        return
+      }
+
+      if (key == "probe") {
+        if (discover_probe++) fail("@discover has a duplicate probe row")
+        # The probe is looked up inside a resolved directory, so a path here
+        # would silently escape that directory.
+        if (value !~ /^[A-Za-z0-9._-]+$/) fail("@discover probe \"" value "\" must be a bare file name")
+      } else if (key == "root") {
+        discover_root++
+        if (value !~ /^\//) fail("@discover root \"" value "\" must be an absolute path")
+      } else if (key == "scan") {
+        discover_scan++
+        if (value !~ /^\//) fail("@discover scan \"" value "\" must be an absolute path")
+      } else {
+        if (discover_version++) fail("@discover has a duplicate version row")
+        head = value
+        sub(/[[:space:]].*$/, "", head)
+        if (head !~ /^[A-Za-z0-9._-]+$/) fail("@discover version must start with a bare file name found in the resolved directory")
+      }
+    }
+
     /[[:cntrl:]]/ {
       fail("control character on line " NR)
       next
@@ -116,6 +164,7 @@ _god_validate_catalog() {
       if (title == "") fail("empty @title")
       seen_title = 1
       in_catalog_description = 0
+      in_discover = 0
       next
     }
 
@@ -125,6 +174,42 @@ _god_validate_catalog() {
       seen_catalog_description = 1
       catalog_description_has_content = 0
       in_catalog_description = 1
+      in_discover = 0
+      next
+    }
+
+    !in_command && $0 == "@discover" {
+      if (group_count > 0) fail("@discover must appear before all groups")
+      if (seen_discover) fail("duplicate @discover")
+      if (seen_execution) fail("@discover and @execution PATH cannot appear in the same catalog")
+      seen_discover = 1
+      in_catalog_description = 0
+      in_discover = 1
+      next
+    }
+
+    !in_command && /^@execution([[:space:]]|$)/ {
+      if (group_count > 0) fail("@execution must appear before all groups")
+      if (seen_execution) fail("duplicate @execution")
+      execution = $0
+      sub(/^@execution[[:space:]]*/, "", execution)
+      if (execution != "PATH") fail("@execution must be exactly PATH")
+      if (seen_discover) fail("@discover and @execution PATH cannot appear in the same catalog")
+      seen_execution = 1
+      in_catalog_description = 0
+      in_discover = 0
+      next
+    }
+
+    !in_command && /^@synced[[:space:]]+/ {
+      if (group_count > 0) fail("@synced must appear before all groups")
+      if (seen_synced) fail("duplicate @synced")
+      synced = $0
+      sub(/^@synced[[:space:]]+/, "", synced)
+      if (synced !~ /^[0-9]+(\.[0-9]+)*$/) fail("@synced must be a dotted numeric version")
+      seen_synced = 1
+      in_catalog_description = 0
+      in_discover = 0
       next
     }
 
@@ -143,6 +228,7 @@ _god_validate_catalog() {
       previous_group = group
       group_command_count = 0
       in_catalog_description = 0
+      in_discover = 0
       next
     }
 
@@ -163,7 +249,14 @@ _god_validate_catalog() {
       has_params = 0
       has_optional = 0
       has_notes = 0
+      has_since = 0
+      has_until = 0
+      has_intent = 0
+      has_runnable = 0
+      since_value = ""
+      until_value = ""
       description_has_content = 0
+      notes_has_content = 0
       run_has_content = 0
       run_lines = 0
       field = ""
@@ -186,6 +279,46 @@ _god_validate_catalog() {
       sub(/^@risk[[:space:]]+/, "", risk)
       if (risk !~ /^(WRITE|WARN|DELETE)$/) fail("command \"" command_name "\" has invalid @risk")
       has_risk = 1
+      field = ""
+      next
+    }
+
+    in_command && /^@since[[:space:]]+/ {
+      if (has_since) fail("command \"" command_name "\" has duplicate @since")
+      since_value = $0
+      sub(/^@since[[:space:]]+/, "", since_value)
+      if (since_value !~ /^[0-9]+(\.[0-9]+)*$/) fail("command \"" command_name "\" has invalid @since; expected a dotted numeric version")
+      has_since = 1
+      field = ""
+      next
+    }
+
+    in_command && /^@until[[:space:]]+/ {
+      if (has_until) fail("command \"" command_name "\" has duplicate @until")
+      until_value = $0
+      sub(/^@until[[:space:]]+/, "", until_value)
+      if (until_value !~ /^[0-9]+(\.[0-9]+)*$/) fail("command \"" command_name "\" has invalid @until; expected a dotted numeric version")
+      has_until = 1
+      field = ""
+      next
+    }
+
+    in_command && /^@intent[[:space:]]+/ {
+      if (has_intent) fail("command \"" command_name "\" has duplicate @intent")
+      intent = $0
+      sub(/^@intent[[:space:]]+/, "", intent)
+      if (intent !~ /^[a-z0-9-]+$/) fail("command \"" command_name "\" has invalid @intent; expected a lowercase kebab-case slug")
+      has_intent = 1
+      field = ""
+      next
+    }
+
+    in_command && /^@runnable([[:space:]]|$)/ {
+      if (has_runnable) fail("command \"" command_name "\" has duplicate @runnable")
+      runnable = $0
+      sub(/^@runnable[[:space:]]*/, "", runnable)
+      if (runnable != "NO") fail("command \"" command_name "\" has invalid @runnable; expected NO")
+      has_runnable = 1
       field = ""
       next
     }
@@ -233,9 +366,20 @@ _god_validate_catalog() {
       if (!has_description) fail("command \"" command_name "\" has no @description")
       else if (!description_has_content) fail("command \"" command_name "\" has an empty @description")
       if (!has_mode) fail("command \"" command_name "\" has no @mode")
+      if (seen_discover && !has_since) {
+        fail("command \"" command_name "\" has no @since; every command in an executable catalog must declare its compatibility floor")
+      }
+      if (has_runnable && !has_notes) {
+        fail("command \"" command_name "\" has @runnable NO but no @notes explaining why it is copy-only")
+      } else if (has_runnable && !notes_has_content) {
+        fail("command \"" command_name "\" has @runnable NO but an empty @notes explanation")
+      }
       if (!has_run) fail("command \"" command_name "\" has no @run")
       else if (!run_has_content) fail("command \"" command_name "\" has an empty @run")
       else if (run_lines != 1) fail("command \"" command_name "\" must contain exactly one physical @run line")
+      if (has_since && has_until && version_compare(since_value, until_value) > 0) {
+        fail("command \"" command_name "\" has @since " since_value " after @until " until_value)
+      }
       in_command = 0
       field = ""
       command_count++
@@ -250,6 +394,7 @@ _god_validate_catalog() {
     }
 
     in_command && field == "description" && /[^[:space:]]/ { description_has_content = 1 }
+    in_command && field == "notes" && /[^[:space:]]/ { notes_has_content = 1 }
     in_command && field == "run" && /[^[:space:]]/ {
       run_has_content = 1
       run_lines++
@@ -260,13 +405,16 @@ _god_validate_catalog() {
 
     !in_command && in_catalog_description && /[^[:space:]]/ { catalog_description_has_content = 1 }
 
+    !in_command && in_discover && /[^[:space:]]/ { validate_discover_row($0) }
+
     !in_command && /^@/ {
       fail("unknown top-level directive \"" $0 "\"")
       in_catalog_description = 0
+      in_discover = 0
       next
     }
 
-    !in_command && /[^[:space:]]/ && !in_catalog_description {
+    !in_command && /[^[:space:]]/ && !in_catalog_description && !in_discover {
       fail("unscoped text on line " NR)
       next
     }
@@ -276,6 +424,8 @@ _god_validate_catalog() {
       if (!seen_title) fail("missing @title")
       if (!seen_catalog_description) fail("missing catalog @description")
       else if (!catalog_description_has_content) fail("empty catalog @description")
+      if (seen_discover && !discover_probe) fail("@discover has no probe row")
+      if (seen_discover && !discover_root) fail("@discover has no root row")
       if (previous_group != "" && group_command_count == 0) fail("group \"" previous_group "\" has no commands")
       if (command_count == 0) fail("no command blocks found")
       exit(errors ? 1 : 0)
@@ -317,6 +467,236 @@ _god_catalog_group_names() {
       name = $0
       sub(/^@group[[:space:]]+/, "", name)
       print name
+    }
+  ' "$1"
+}
+
+# Service-level version metadata. Absent on a catalog that has no @discover
+# block, which is how the resolver tells a display-only service from one it
+# can execute against.
+
+_god_catalog_has_discover() {
+  LC_ALL=C awk '
+    /^@discover$/ { found = 1; exit }
+    /^@group[[:space:]]+/ { exit }
+    END { exit(found ? 0 : 1) }
+  ' "$1"
+}
+
+# _god_catalog_execution_mode FILE
+#
+# Prints DISCOVER for a catalog with an installed-tool-family discovery block,
+# PATH for an intentional collection of commands resolved through PATH, or
+# nothing for a display-only catalog. Validation owns the mutual-exclusion
+# rule, so callers never need a service-name branch.
+_god_catalog_execution_mode() {
+  LC_ALL=C awk '
+    /^@discover$/ { print "DISCOVER"; exit }
+    /^@execution[[:space:]]+PATH$/ { print "PATH"; exit }
+    /^@group[[:space:]]+/ { exit }
+  ' "$1"
+}
+
+_god_catalog_has_execution() {
+  [ -n "$(_god_catalog_execution_mode "$1")" ]
+}
+
+# _god_catalog_discover_value FILE KEY
+#
+# KEY is one of probe, root, scan, version. Prints the VALUE column of the
+# matching row inside the @discover block, or nothing when absent.
+_god_catalog_discover_value() {
+  LC_ALL=C awk -v want="$2" '
+    /^@discover$/ { in_block = 1; next }
+    in_block && /^@/ { in_block = 0 }
+    in_block && /[^[:space:]]/ {
+      count = split($0, parts, /\|/)
+      if (count == 3) {
+        key = parts[1]
+        sub(/^[[:space:]]+/, "", key)
+        sub(/[[:space:]]+$/, "", key)
+        if (key == want) {
+          value = parts[2]
+          sub(/^[[:space:]]+/, "", value)
+          sub(/[[:space:]]+$/, "", value)
+          print value
+          exit
+        }
+      }
+    }
+  ' "$1"
+}
+
+# _god_catalog_command_export FILE GROUP ENTRY_INDEX
+#
+# Structured, machine-readable dump of one command record: the fields
+# resolve.sh and execute.sh need without re-parsing the grammar themselves.
+# One tab-separated row per line:
+#   MODE\t<mode>
+#   RISK\t<risk>              (absent when the record has no @risk)
+#   RUN\t<run>
+#   SINCE\t<since>            (absent when the record has no @since)
+#   UNTIL\t<until>            (absent when the record has no @until)
+#   INTENT\t<intent>          (absent when the record has no @intent)
+#   RUNNABLE\t0|1              (1 is the default; 0 means copy-only)
+#   NOTES\t<notes>             (present when the record has @notes)
+#   PARAM\t<name>\t<example>\t<meaning>\t<keyword>:<value-class>
+#   OPTIONAL\t<name>\t<example>\t<meaning>\t<keyword>:<value-class>
+#   TITLE\t<command title>
+_god_catalog_command_export() {
+  LC_ALL=C awk \
+    -v wanted="$2" \
+    -v wanted_index="$3" '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+
+    function words(value) {
+      value = tolower(value)
+      gsub(/[^a-z0-9]+/, " ", value)
+      return " " value " "
+    }
+
+    # Resolution used to rediscover this classification with several tr
+    # processes every time a row was highlighted. It is catalog metadata, so
+    # derive it once inside the export parse already walking the record.
+    function slot_class(name, meaning, name_words, meaning_words) {
+      name_words = words(name)
+      meaning_words = words(meaning)
+
+      if (index(name_words, " topic ")) return "topic:name"
+      if (index(name_words, " group ")) return "group:name"
+      if (index(name_words, " host ")) return "host:name"
+      if (index(name_words, " index ")) return "index:name"
+      if (index(name_words, " collection ")) return "collection:name"
+      if (index(name_words, " offset ")) return "offset:num"
+      if (index(name_words, " partition ")) return "partition:num"
+      if (index(name_words, " port ")) return "port:num"
+      if (index(name_words, " count ")) return "count:num"
+
+      if (index(meaning_words, " topic ")) return "topic:name"
+      if (index(meaning_words, " group ")) return "group:name"
+      if (index(meaning_words, " host ")) return "host:name"
+      if (index(meaning_words, " index ")) return "index:name"
+      if (index(meaning_words, " collection ")) return "collection:name"
+      if (index(meaning_words, " offset ")) return "offset:num"
+      if (index(meaning_words, " partition ")) return "partition:num"
+      if (index(meaning_words, " port ")) return "port:num"
+      if (index(meaning_words, " count ")) return "count:num"
+      return ""
+    }
+
+    /^@group[[:space:]]+/ {
+      current = $0
+      sub(/^@group[[:space:]]+/, "", current)
+      in_wanted_group = tolower(current) == tolower(wanted)
+      if (in_wanted_group) group_position = 0
+      next
+    }
+
+    /^@command[[:space:]]+/ {
+      if (in_wanted_group) group_position++
+      selected = in_wanted_group && group_position == wanted_index
+      command_title = $0
+      sub(/^@command[[:space:]]+/, "", command_title)
+      command_runnable = 1
+      notes = ""
+      field = ""
+      next
+    }
+
+    selected && /^@mode[[:space:]]+/ {
+      value = $0
+      sub(/^@mode[[:space:]]+/, "", value)
+      print "MODE\t" value
+      field = ""
+      next
+    }
+
+    selected && /^@risk[[:space:]]+/ {
+      value = $0
+      sub(/^@risk[[:space:]]+/, "", value)
+      print "RISK\t" value
+      field = ""
+      next
+    }
+
+    selected && /^@since[[:space:]]+/ {
+      value = $0
+      sub(/^@since[[:space:]]+/, "", value)
+      print "SINCE\t" value
+      field = ""
+      next
+    }
+
+    selected && /^@until[[:space:]]+/ {
+      value = $0
+      sub(/^@until[[:space:]]+/, "", value)
+      print "UNTIL\t" value
+      field = ""
+      next
+    }
+
+    selected && /^@intent[[:space:]]+/ {
+      value = $0
+      sub(/^@intent[[:space:]]+/, "", value)
+      print "INTENT\t" value
+      field = ""
+      next
+    }
+
+    selected && /^@runnable[[:space:]]+/ {
+      command_runnable = 0
+      field = ""
+      next
+    }
+
+    selected && $0 == "@description" { field = "description"; next }
+    selected && $0 == "@run" { field = "run"; next }
+    selected && $0 == "@params" { field = "params"; next }
+    selected && $0 == "@optional" { field = "optional"; next }
+    selected && $0 == "@notes" { field = "notes"; next }
+
+    $0 == "@end" {
+      if (selected) {
+        print "RUNNABLE\t" command_runnable
+        if (notes != "") print "NOTES\t" notes
+        print "TITLE\t" command_title
+      }
+      selected = 0
+      field = ""
+      next
+    }
+
+    selected && field == "run" && /[^[:space:]]/ { print "RUN\t" $0 }
+
+    selected && field == "notes" && /[^[:space:]]/ {
+      notes = notes (notes == "" ? "" : " ") $0
+      next
+    }
+
+    selected && (field == "params" || field == "optional") && /[^[:space:]]/ {
+      columns = split($0, parts, /\|/)
+      if (columns == 3) {
+        tag = field == "params" ? "PARAM" : "OPTIONAL"
+        name = trim(parts[1])
+        example = trim(parts[2])
+        meaning = trim(parts[3])
+        print tag "\t" name "\t" example "\t" meaning "\t" slot_class(name, meaning)
+      }
+    }
+  ' "$1"
+}
+
+_god_catalog_synced() {
+  LC_ALL=C awk '
+    /^@synced[[:space:]]+/ {
+      value = $0
+      sub(/^@synced[[:space:]]+/, "", value)
+      print value
+      exit
     }
   ' "$1"
 }

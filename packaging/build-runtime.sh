@@ -108,7 +108,7 @@ mkdir -p \
 
 cp "$_bash_god_package_dir/god" "$_bash_god_root/bin/god"
 cp "$_bash_god_repo_dir/god" "$_bash_god_root/lib/bash-god/god"
-for _bash_god_module in art.sh catalog.sh core.sh maintenance.sh menu.sh render.sh search.sh tree.sh; do
+for _bash_god_module in art.sh catalog.sh core.sh discover.sh execute.sh maintenance.sh menu.sh render.sh resolve.sh search.sh tree.sh; do
   cp "$_bash_god_repo_dir/bash_god/$_bash_god_module" "$_bash_god_root/lib/bash-god/bash_god/$_bash_god_module"
 done
 

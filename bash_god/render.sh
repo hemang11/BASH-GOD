@@ -22,6 +22,50 @@ _god_print_available_services() {
   fi
 }
 
+# _god_print_discovered_paths
+#
+# `god --paths`: every service declaring @discover, its resolved location, and
+# whether that resolution is still fresh. PATH-execution services deliberately
+# do not appear because they have no single product directory to report.
+_god_print_discovered_paths() {
+  local catalog_files file service catalog path version printed
+
+  if [ -z "$(type -t _god_discover_path 2>/dev/null)" ]; then
+    printf 'BASH_GOD: discovery is unavailable in this installation.\n' >&2
+    return 2
+  fi
+
+  catalog_files="$(_god_catalog_files)" || return 2
+  printed=1
+  _god_banner 'DISCOVERED PATHS' 'Executable services BASH_GOD can detect and the directories they use.'
+  printf '\n'
+
+  while IFS= read -r file; do
+    _god_is_catalog_file "$file" || continue
+    service="$(_god_service_name_for_catalog "$file")" || continue
+    catalog="$file"
+    _god_catalog_has_discover "$catalog" || continue
+    printed=0
+    path="$(_god_discover_path "$service" 2>/dev/null)"
+    if [ -z "$path" ]; then
+      printf '  %s%-16s%s %snot resolved%s   %sgod %s --resync%s\n' \
+        "$_GOD_ACCENT" "$service" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET" "$_GOD_COMMAND" "$service" "$_GOD_RESET"
+      continue
+    fi
+    version="$(_god_discover_version "$service" 2>/dev/null)"
+    if _god_discover_is_stale "$service" "$catalog"; then
+      printf '  %s%-16s%s %s%s%s (stale)   %sgod %s --resync%s\n' \
+        "$_GOD_ACCENT" "$service" "$_GOD_RESET" "$_GOD_WARNING" "$path" "$_GOD_RESET" "$_GOD_COMMAND" "$service" "$_GOD_RESET"
+    else
+      printf '  %s%-16s%s %s (version %s)\n' "$_GOD_ACCENT" "$service" "$_GOD_RESET" "$path" "${version:-unknown}"
+    fi
+  done <<< "$catalog_files"
+
+  if [ "$printed" -eq 1 ]; then
+    printf '  %sNo executable service supports automatic path detection yet.%s\n' "$_GOD_DIM" "$_GOD_RESET"
+  fi
+}
+
 _god_print_view_key_rows() {
   printf '  %s%-15s%s %sExplain one displayed row%s\n' "$_GOD_ACCENT" '<number>' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
   printf '  %s%-15s%s %sExpand every command below the current scope%s\n' "$_GOD_ACCENT" '--details' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
@@ -59,6 +103,8 @@ _god_print_view_keys() {
     printf '  %s%-38s%s %sExplain every catalog command%s\n' "$_GOD_COMMAND" 'god --details' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sSearch every catalog%s\n' "$_GOD_COMMAND" 'god q WORDS' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sSearch help and examples%s\n' "$_GOD_COMMAND" 'god q --help' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+    printf '  %s%-38s%s %sSee detected executable service directories%s\n' "$_GOD_COMMAND" 'god --paths' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+    printf '  %s%-38s%s %sForce a fresh probe for one service%s\n' "$_GOD_COMMAND" 'god SERVICE --resync' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sShow BASH_GOD version and license%s\n' "$_GOD_COMMAND" 'god --version' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sCompletely remove a managed GitHub install%s\n' "$_GOD_COMMAND" 'god --uninstall' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
   fi
@@ -76,11 +122,13 @@ _god_print_root_help() {
   printf '  %s%-44s%s %sExplain one displayed row%s\n' "$_GOD_COMMAND" 'god kafka health <number>' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
   printf '  %s%-44s%s %sSearch Kafka by remembered intent%s\n' "$_GOD_COMMAND" 'god kafka q "Get all consumers in a broker"' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
   printf '  %s%-44s%s %sUse an explicit regular expression%s\n' "$_GOD_COMMAND" "god q --regex 'offset|lag'" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+  printf '  %s%-44s%s %sSee what BASH_GOD has resolved on this machine%s\n' "$_GOD_COMMAND" 'god --paths' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+  printf '  %s%-44s%s %sForce a fresh probe if Kafka moved%s\n' "$_GOD_COMMAND" 'god kafka --resync' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
 
   printf '\n%sVIEW KEYS%s\n' "$_GOD_BOLD" "$_GOD_RESET"
   _god_print_view_key_rows
 
-  printf '\n%s  Case-insensitive and display-only. Replace <placeholders> before copying.%s\n' "$_GOD_DIM" "$_GOD_RESET"
+  printf '\n%s  Case-insensitive. On a TTY, search can offer a reviewed command; otherwise copy and replace <placeholders>.%s\n' "$_GOD_DIM" "$_GOD_RESET"
   printf '%s  Keys: %sgod --keys%s%s    Version: %sgod --version%s%s    Remove: %sgod --uninstall%s\n' \
     "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET" \
     "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET"

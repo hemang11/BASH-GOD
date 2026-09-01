@@ -13,7 +13,7 @@ fi
 
 _BASH_GOD_CORE_DIR="$(CDPATH= cd "$(dirname "$_BASH_GOD_CORE_FILE")" 2>/dev/null && pwd -P)"
 _BASH_GOD_CATALOG_DIR="$_BASH_GOD_CORE_DIR/catalog"
-_BASH_GOD_VERSION='0.0.1.5'
+_BASH_GOD_VERSION='0.0.2.0'
 _BASH_GOD_LICENSE='MIT'
 unset _BASH_GOD_CORE_FILE
 
@@ -23,6 +23,35 @@ _god_lower() {
 
 _god_upper() {
   printf '%s' "$1" | LC_ALL=C tr '[:lower:]' '[:upper:]'
+}
+
+# _god_version_compare LEFT RIGHT
+#
+# Dotted-numeric comparison shared by search filtering and discovery.
+# Missing components count as zero, so 3.9 and 3.9.0 are equal. Prints 1, -1,
+# or 0 and always returns success.
+_god_version_compare() {
+  local left right total i lv rv
+  local -a left_parts right_parts
+
+  IFS='.' read -r -a left_parts <<< "$1"
+  IFS='.' read -r -a right_parts <<< "$2"
+  total=${#left_parts[@]}
+  [ "${#right_parts[@]}" -gt "$total" ] && total=${#right_parts[@]}
+
+  i=0
+  while [ "$i" -lt "$total" ]; do
+    lv="${left_parts[$i]:-0}"
+    rv="${right_parts[$i]:-0}"
+    case "$lv" in ''|*[!0-9]*) lv=0 ;; esac
+    case "$rv" in ''|*[!0-9]*) rv=0 ;; esac
+    lv=$((10#$lv))
+    rv=$((10#$rv))
+    if [ "$lv" -gt "$rv" ]; then printf '1\n'; return 0; fi
+    if [ "$lv" -lt "$rv" ]; then printf -- '-1\n'; return 0; fi
+    i=$((i + 1))
+  done
+  printf '0\n'
 }
 
 _god_style_init() {
@@ -150,6 +179,15 @@ _god_print_version() {
 # Catalog parsing and normal terminal rendering are sourced before specialized views.
 # shellcheck source=catalog.sh
 . "$_BASH_GOD_CORE_DIR/catalog.sh" || return 1
+# discover.sh only reads its own cache here; it never probes the filesystem
+# unless a caller invokes _god_discover_resolve explicitly. Optional: an
+# installation that predates it (or a runtime package built before T8 ships
+# it) simply never has a detected version, so search's version filtering
+# stays inert, same as a service with no @discover block at all.
+if [ -r "$_BASH_GOD_CORE_DIR/discover.sh" ]; then
+  # shellcheck source=discover.sh
+  . "$_BASH_GOD_CORE_DIR/discover.sh" || return 1
+fi
 # shellcheck source=art.sh
 . "$_BASH_GOD_CORE_DIR/art.sh" || return 1
 # shellcheck source=render.sh
@@ -160,6 +198,23 @@ _god_print_version() {
 . "$_BASH_GOD_CORE_DIR/tree.sh" || return 1
 # shellcheck source=search.sh
 . "$_BASH_GOD_CORE_DIR/search.sh" || return 1
+
+# menu.sh, resolve.sh, and execute.sh are the interactive execution path.
+# Optional for the same reason as discover.sh above: an installation that
+# predates them just never offers to run anything, same as any service with
+# no @discover block.
+if [ -r "$_BASH_GOD_CORE_DIR/menu.sh" ]; then
+  # shellcheck source=menu.sh
+  . "$_BASH_GOD_CORE_DIR/menu.sh" || return 1
+fi
+if [ -r "$_BASH_GOD_CORE_DIR/resolve.sh" ]; then
+  # shellcheck source=resolve.sh
+  . "$_BASH_GOD_CORE_DIR/resolve.sh" || return 1
+fi
+if [ -r "$_BASH_GOD_CORE_DIR/execute.sh" ]; then
+  # shellcheck source=execute.sh
+  . "$_BASH_GOD_CORE_DIR/execute.sh" || return 1
+fi
 
 _god_run_maintenance() {
   local action maintenance_file
@@ -187,6 +242,64 @@ _god_print_unknown_group() {
   _god_style_init 2 || return $?
   printf 'BASH_GOD: unknown group %s for service %s. Names must match exactly (case-insensitive).\n\n' "$2" "$1" >&2
   _god_print_service_help "$3" "$1" >&2
+}
+
+# _god_resync_service CATALOG SERVICE
+#
+# `god SERVICE --resync`: forces a fresh probe/root/scan/version resolution,
+# ignoring whatever is already cached. A service with no @discover block has
+# nothing to resync; that is not an error, just nothing to do.
+_god_resync_service() {
+  local catalog service status path version synced service_upper cmp
+
+  catalog="$1"
+  service="$2"
+
+  if [ -z "$(type -t _god_discover_resolve 2>/dev/null)" ]; then
+    printf 'BASH_GOD: discovery is unavailable in this installation.\n' >&2
+    return 2
+  fi
+  if ! _god_catalog_has_discover "$catalog"; then
+    printf 'BASH_GOD: %s has no @discover block; there is nothing to resync.\n' "$service" >&2
+    return 2
+  fi
+
+  _god_discover_resolve "$service" "$catalog"
+  status=$?
+  case "$status" in
+    0)
+      path="$(_god_discover_path "$service")"
+      version="$(_god_discover_version "$service")"
+      service_upper="$(printf '%s' "$service" | LC_ALL=C tr '[:lower:]' '[:upper:]')"
+
+      _god_banner "${service_upper} RESYNCED" 'Re-probed this machine and updated the cached path and version.'
+      printf '  %s%-9s%s %s\n' "$_GOD_DIM" 'Path' "$_GOD_RESET" "$path"
+      printf '  %s%-9s%s %s\n' "$_GOD_DIM" 'Version' "$_GOD_RESET" "${version:-unknown}"
+
+      if [ "${version:-unknown}" = "unknown" ]; then
+        printf '\n  %sCould not read a version number from this install; search will show every variant, unfiltered.%s\n' \
+          "$_GOD_DIM" "$_GOD_RESET"
+      else
+        synced="$(_god_catalog_synced "$catalog" 2>/dev/null)"
+        if [ -n "$synced" ]; then
+          cmp="$(_god_version_compare "$version" "$synced")"
+          if [ "$cmp" != 0 ]; then
+            printf '\n  %sHeads up%s : Catalog was last checked against %s %s; You are running %s %s. Flags may differ — see %sgod %s native%s\n' \
+              "$_GOD_WARNING" "$_GOD_RESET" "$service" "$synced" "$service" "$version" "$_GOD_COMMAND" "$service" "$_GOD_RESET"
+          fi
+        fi
+      fi
+
+      printf '\n  %sTry:%s %sgod %s q WORDS%s\n' "$_GOD_DIM" "$_GOD_RESET" "$_GOD_COMMAND" "$service" "$_GOD_RESET"
+      return 0
+      ;;
+    *)
+      printf 'BASH_GOD: could not find %s on this machine (checked PATH and the usual install locations).\n' "$service" >&2
+      printf 'BASH_GOD: installed somewhere else? Add "path=<bin-directory>" to %s and resync again.\n' \
+        "$(_god_discover_config_file "$service" 2>/dev/null || printf '~/.config/bash-god/%s.conf' "$service")" >&2
+      return 1
+      ;;
+  esac
 }
 
 god() {
@@ -260,6 +373,14 @@ god() {
         return 2
       fi
       _god_print_root_details
+      return $?
+      ;;
+    paths|--paths)
+      if [ "$#" -ne 0 ]; then
+        printf 'BASH_GOD: root --paths does not accept additional arguments.\n' >&2
+        return 2
+      fi
+      _god_print_discovered_paths
       return $?
       ;;
     full|--full)
@@ -392,6 +513,14 @@ god() {
         return 2
       fi
       _god_print_service_details "$catalog" "$service"
+      return $?
+      ;;
+    resync|--resync)
+      if [ "$#" -ne 0 ]; then
+        printf 'BASH_GOD: service --resync does not accept additional arguments.\n' >&2
+        return 2
+      fi
+      _god_resync_service "$catalog" "$service"
       return $?
       ;;
     full|--full)

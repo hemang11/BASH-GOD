@@ -21,6 +21,16 @@ search_module="$project_dir/bash_god/search.sh"
 tree_module="$project_dir/bash_god/tree.sh"
 license_file="$project_dir/LICENSE"
 [ -f "$license_file" ] || license_file="$project_dir/bash_god/LICENSE"
+
+# Isolated from the real machine's discover cache and per-service config
+# overrides (~/.local/state/bash-god, ~/.config/bash-god): a service resolved
+# for real on the developer's own machine must not silently flip these
+# fixtures from the unresolved-service assertions they're written against.
+smoke_home="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-smoke.XXXXXX" 2>/dev/null)" || exit 1
+trap 'rm -rf -- "$smoke_home"' EXIT
+export HOME="$smoke_home"
+unset XDG_STATE_HOME XDG_CONFIG_HOME
+
 failures=0
 checks=0
 
@@ -33,6 +43,22 @@ fail() {
   checks=$((checks + 1))
   failures=$((failures + 1))
   printf 'not ok %02d - %s\n' "$checks" "$1"
+}
+
+# Keep this as the one stable smoke entrypoint.  The focused suites own their
+# temporary catalogs and fake executables, while this runner makes each of
+# them a required part of the repository's normal smoke contract.
+run_focused_suite() {
+  local suite status
+
+  suite=$1
+  bash "$test_dir/$suite"
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    pass "$suite passes"
+  else
+    fail "$suite passes"
+  fi
 }
 
 contains() {
@@ -108,6 +134,7 @@ catalog_entry_number() {
 
 kafka_group_count="$(catalog_group_count "$kafka_catalog")"
 kafka_command_count="$(catalog_command_count "$kafka_catalog")"
+kafka_since_count="$(LC_ALL=C awk '/^@since[[:space:]]+/ { count++ } END { print count + 0 }' "$kafka_catalog")"
 offset_command_count="$(catalog_group_command_count "$kafka_catalog" offset)"
 native_command_count="$(catalog_group_command_count "$kafka_catalog" native)"
 access_command_count="$(catalog_group_command_count "$kafka_catalog" access)"
@@ -118,8 +145,52 @@ group_members_number="$(catalog_entry_number "$kafka_catalog" groups 'Show activ
 group_list_number="$(catalog_entry_number "$kafka_catalog" groups 'List consumer groups')"
 health_unavailable_number="$(catalog_entry_number "$kafka_catalog" health 'Find partitions without an available leader')"
 health_unavailable_label="$(printf '%02d' "$health_unavailable_number")"
+setup_version_number="$(catalog_entry_number "$kafka_catalog" setup 'Show the installed Kafka version')"
+setup_tools_number="$(catalog_entry_number "$kafka_catalog" setup 'List installed Kafka command-line tools')"
+
+missing_since_catalog="$smoke_home/missing-since.god"
+display_only_catalog="$smoke_home/display-only.god"
+printf '%s\n' \
+  '@title Executable fixture' \
+  '@description' \
+  'Validator fixture.' \
+  '@discover' \
+  'probe | fixture.sh | Fixture probe' \
+  'root | /tmp | Fixture root' \
+  '@group demo' \
+  '@command Missing compatibility floor' \
+  '@mode LOCAL' \
+  '@description' \
+  'Deliberately omits the required floor.' \
+  '@run' \
+  'printf fixture' \
+  '@end' > "$missing_since_catalog"
+printf '%s\n' \
+  '@title Display-only fixture' \
+  '@description' \
+  'Validator fixture.' \
+  '@group demo' \
+  '@command Display-only command' \
+  '@mode LOCAL' \
+  '@description' \
+  'A display-only catalog has no detected service version.' \
+  '@run' \
+  'printf fixture' \
+  '@end' > "$display_only_catalog"
+missing_since_status=0
+missing_since_output="$(bash -c '. "$1"; _god_validate_catalog "$2"' _ "$catalog_module" "$missing_since_catalog" 2>&1)" || missing_since_status=$?
+display_only_status=0
+bash -c '. "$1"; _god_validate_catalog "$2"' _ "$catalog_module" "$display_only_catalog" >/dev/null 2>&1 || display_only_status=$?
+if [ "$kafka_since_count" -eq "$kafka_command_count" ] && [ "$missing_since_status" -ne 0 ] && \
+   contains "$missing_since_output" 'has no @since; every command in an executable catalog must declare its compatibility floor' && \
+   [ "$display_only_status" -eq 0 ]; then
+  pass 'every executable-service command requires an explicit compatibility floor'
+else
+  fail 'every executable-service command requires an explicit compatibility floor'
+fi
 
 output="$(GOD_COLOR=never "$god_cli")"
+paths_output="$(GOD_COLOR=never "$god_cli" --paths)"
 home_identity="BASH_GOD  v$expected_version  •  MIT License"
 home_identity_ascii="BASH_GOD  v$expected_version  -  MIT License"
 home_slogan='Your DevOps command memory: searchable, copy-ready native commands.'
@@ -130,10 +201,18 @@ services_table_start="$(printf 'SERVICES\n  SERVICE')"
 quick_start_first_row="$(printf 'QUICK START\n  god kafka')"
 quick_start_semantic_row="$(printf '  %-44s %s' 'god kafka q "Get all consumers in a broker"' 'Search Kafka by remembered intent')"
 view_keys_first_row="$(printf 'VIEW KEYS\n  <number>')"
-if contains "$output" "$services_table_start" && contains "$output" 'god aws' && contains "$output" "$quick_start_first_row" && has_exact_line "$output" "$quick_start_semantic_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'Case-insensitive and display-only' && contains "$output" 'god --keys' && contains "$output" 'god --uninstall' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_identity" && not_contains "$output" "$home_slogan"; then
+if contains "$output" "$services_table_start" && contains "$output" 'god aws' && contains "$output" "$quick_start_first_row" && has_exact_line "$output" "$quick_start_semantic_row" && contains "$output" "$view_keys_first_row" && contains "$output" 'god kafka health <number>' && contains "$output" "god q --regex 'offset|lag'" && contains "$output" '--quiet' && contains "$output" 'On a TTY, search can offer a reviewed command' && contains "$output" 'god --keys' && contains "$output" 'god --uninstall' && not_contains "$output" "$logo_first" && not_contains "$output" "$home_identity" && not_contains "$output" "$home_slogan"; then
   pass 'non-interactive root dashboard stays decoration-free'
 else
   fail 'non-interactive root dashboard stays decoration-free'
+fi
+
+if contains "$paths_output" 'DISCOVERED PATHS' && \
+   contains "$paths_output" 'Executable services BASH_GOD can detect and the directories they use.' && \
+   not_contains "$paths_output" '@discover'; then
+  pass 'resolved-path view uses operator language instead of catalog grammar'
+else
+  fail 'resolved-path view uses operator language instead of catalog grammar'
 fi
 
 maintenance_bare_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; _god_run_maintenance() { printf "maintenance:%s\n" "$1"; }; GOD_COLOR=never god' _ "$project_dir")"
@@ -225,14 +304,14 @@ else
 fi
 
 entry_output="$(GOD_COLOR=never "$god_cli" kafka consume "$consume_exact_number")"
-if contains "$entry_output" "KAFKA / CONSUME / $consume_exact_label" && contains "$entry_output" 'PARAMETER' && contains "$entry_output" 'OPTIONAL' && contains "$entry_output" '--partition'; then
+if contains "$entry_output" "KAFKA / CONSUME / $consume_exact_label" && contains "$entry_output" 'PARAMETER' && contains "$entry_output" '--partition' && contains "$entry_output" '--max-messages' && contains "$entry_output" '--timeout-ms'; then
   pass 'numbered entry explains command parameters'
 else
   fail 'numbered entry explains command parameters'
 fi
 
 details_output="$(GOD_COLOR=never "$god_cli" kafka consume --details)"
-if contains "$details_output" 'KAFKA / CONSUME / DETAILS' && contains "$details_output" 'FULL DETAILS' && contains "$details_output" 'Starts a console consumer at one explicit topic partition and offset.' && contains "$details_output" 'PARAMETER' && contains "$details_output" 'OPTIONAL' && contains "$details_output" 'Print record keys, headers, and timestamps'; then
+if contains "$details_output" 'KAFKA / CONSUME / DETAILS' && contains "$details_output" 'FULL DETAILS' && contains "$details_output" 'Starts a console consumer at one explicit topic partition and offset.' && contains "$details_output" 'PARAMETER' && contains "$details_output" '--max-messages' && contains "$details_output" 'Print record keys, headers, and timestamps'; then
   pass 'details expands every command in one group'
 else
   fail 'details expands every command in one group'
@@ -316,6 +395,451 @@ if contains "$broker_query_output" 'Smart search: Get all consumers in a broker'
   pass 'scoped remembered intent ranks list consumer groups first'
 else
   fail 'scoped remembered intent ranks list consumer groups first'
+fi
+
+# A resolved service gets one rich, title-first picker on an interactive
+# terminal. A redirected/no-TTY invocation must remain the old static table;
+# it must never suppress the rows and leave only a banner behind.
+rich_fixture="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-rich.XXXXXX" 2>/dev/null)" || exit 1
+rich_bin="$rich_fixture/kafka/bin"
+mkdir -p "$rich_bin" "$rich_fixture/.local/state/bash-god"
+printf '#!/usr/bin/env bash\nprintf "kafka-topics 3.9.0\\n"\n' > "$rich_bin/kafka-topics.sh"
+chmod 0755 "$rich_bin/kafka-topics.sh"
+for rich_tool in kafka-consumer-groups.sh kafka-console-consumer.sh kafka-broker-api-versions.sh; do
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$rich_bin/$rich_tool"
+  chmod 0755 "$rich_bin/$rich_tool"
+done
+printf 'kafka.path=%s\nkafka.version=3.9.0\n' "$rich_bin" > "$rich_fixture/.local/state/bash-god/execution-paths"
+
+rich_fallback_output="$(HOME="$rich_fixture" GOD_COLOR=never "$god_cli" kafka q 'Get all consumers in a broker')"
+rich_picker_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_stdout_is_terminal() { return 0; }
+  _god_menu_rich_available() { return 0; }
+  _god_menu_select_rich() {
+    "$4" 1 || return $?
+    first_detail=$_god_menu_provider_detail
+    "$4" 2 || return $?
+    printf "RICH PICKER ROWS\\n%s\\nRICH PICKER DETAILS\\n%s\\nSECOND RICH PICKER DETAILS\\n%s\\n" \
+      "$1" "$first_detail" "$_god_menu_provider_detail"
+    [ "$first_detail" != "$_god_menu_provider_detail" ] || printf "DETAILS DID NOT CHANGE\\n"
+    _god_menu_choice=-1
+    return 0
+  }
+  god kafka q "Get all consumers in a broker"
+' _ "$project_dir")"
+rich_enter_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_stdout_is_terminal() { return 0; }
+  _god_menu_rich_available() { return 0; }
+  _god_menu_select_rich() {
+    _god_menu_choice=0
+    _god_menu_edited_command=""
+    return 0
+  }
+  _god_execute_resolved() {
+    printf "FAST RESOLVED EXECUTION|%s|%s|%s|%s\\n" "$1" "$2" "$3" "$4"
+  }
+  _god_execute_command() { printf "UNEXPECTED SLOW EXECUTION\\n"; }
+  god kafka q "Get all consumers in a broker"
+' _ "$project_dir")"
+rich_edit_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_stdout_is_terminal() { return 0; }
+  _god_menu_rich_available() { return 0; }
+  _god_menu_select_rich() {
+    _god_menu_choice=0
+    _god_menu_edited_command="printf edited-command"
+    return 0
+  }
+  _god_execute_edited() {
+    printf "EDITED COMMAND|%s|%s|%s\\n" "$1" "$2" "$3"
+  }
+  _god_execute_resolved() { printf "UNEXPECTED PREPARED EXECUTION\\n"; }
+  god kafka q "Get all consumers in a broker"
+' _ "$project_dir")"
+rich_pending_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_stdout_is_terminal() { return 0; }
+  _god_menu_rich_available() { return 0; }
+  _god_menu_select_rich() {
+    _god_menu_choice=0
+    _god_menu_edited_command=""
+    return 0
+  }
+  _god_execute_command() {
+    printf "PENDING EXECUTION|%s|%s|%s\\n" "$3" "$4" "$7"
+  }
+  _god_execute_resolved() { printf "UNEXPECTED PREPARED EXECUTION\\n"; }
+  god kafka consume q "Read a topic from beginning"
+' _ "$project_dir")"
+rich_failure_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_stdout_is_terminal() { return 0; }
+  _god_menu_rich_available() { return 0; }
+  _god_discover_version() { printf "1.1.0\n"; }
+  _god_menu_select_rich() {
+    _god_menu_choice=0
+    _god_menu_edited_command=""
+    return 0
+  }
+  _god_execute_resolved() {
+    printf "VISIBLE CHILD ERROR\n" >&2
+    return 47
+  }
+  god kafka q "broker API compatibility"
+  printf "RICH FAILURE STATUS:%s\n" "$?"
+' _ "$project_dir" 2>&1)"
+rich_version_resolution_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_resolve_command kafka "$2" setup "$3" "$4" "find version"
+' _ "$project_dir" "$kafka_catalog" "$setup_version_number" "$rich_bin")"
+rich_tools_resolution_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_resolve_command kafka "$2" setup "$3" "$4" "list installed tools"
+' _ "$project_dir" "$kafka_catalog" "$setup_tools_number" "$rich_bin")"
+rich_compatibility_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_stdout_is_terminal() { return 0; }
+  _god_menu_rich_available() { return 0; }
+  _god_discover_version() { printf "1.1.0\n"; }
+  _god_menu_select_rich() {
+    selected="$(printf "%s\n" "$1" | LC_ALL=C awk -F "\t" "\$1 == \"Show the installed Kafka version\" { print NR; exit }")"
+    printf "COMPATIBILITY HEADER:%s\nCOMPATIBILITY ROWS:\n%s\n" "$5" "$1"
+    [ -n "$selected" ] || return 1
+    "$4" "$selected" || return $?
+    printf "COMPATIBILITY DETAIL:%s\n" "$_god_menu_provider_detail"
+    _god_menu_choice=-1
+    return 0
+  }
+  god kafka q "find version"
+' _ "$project_dir")"
+rich_all_versions_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_stdout_is_terminal() { return 0; }
+  _god_menu_rich_available() { return 0; }
+  _god_discover_version() { printf "1.1.0\n"; }
+  _god_menu_select_rich() {
+    printf "ALL-VERSION ROWS:\n%s\n" "$1"
+    _god_menu_choice=-1
+    return 0
+  }
+  god kafka q "find version" --all-versions
+' _ "$project_dir")"
+rich_offset_compatibility_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_stdout_is_terminal() { return 0; }
+  _god_menu_rich_available() { return 0; }
+  _god_discover_version() { printf "1.1.0\n"; }
+  _god_menu_select_rich() {
+    printf "OFFSET COMPATIBILITY ROWS:\n%s\n" "$1"
+    _god_menu_choice=-1
+    return 0
+  }
+  god kafka q "find offset"
+' _ "$project_dir")"
+rich_missing_tool_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_stdout_is_terminal() { return 0; }
+  _god_menu_rich_available() { return 0; }
+  _god_discover_version() { printf "3.9.0\n"; }
+  _god_menu_select_rich() {
+    printf "MISSING TOOL ROWS:\n%s\n" "$1"
+    _god_menu_choice=-1
+    return 0
+  }
+  god kafka q "get offsets"
+' _ "$project_dir")"
+reviewed_execute_output="$(GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_execute_confirm() { printf "UNEXPECTED CONFIRM\\n"; return 1; }
+  _god_execute_run() { printf "REVIEWED RUN|%s|%s\\n" "$1" "$2"; }
+  _god_execute_resolved "displayed command" "safe-template" "" 1 "safe-value"
+' _ "$project_dir" 2>&1)"
+execution_stream_output="$(GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_execute_run "printf stdout-visible; printf stderr-visible >&2"
+' _ "$project_dir" 2>&1)"
+wrapped_command="$rich_bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --command-config $rich_bin/../config/consumer.properties --list"
+wrapped_preview="$(bash -c '. "$1/bash_god/menu.sh"; _god_menu_wrap "$2" 50 0' _ "$project_dir" "$wrapped_command")"
+rich_render_output="$(LANG=en_US.UTF-8 GOD_COLOR=never bash -c '
+  . "$1/bash_god/menu.sh"
+  _god_menu_style_init
+  _god_menu_rich_el="$(printf "\\033[K")"
+  exec 3>&1
+  rows=$'"'"'List consumer groups\t\t\t1\nShow Kafka features\tneeds v2.7+ (have v1.1.0)\t\t0'"'"'
+  _god_menu_draw_rich_static "$rows" 2 2 90 "KAFKA SEARCH RESULTS" "Smart search: consumers"
+  _god_menu_draw_rich_detail "$rows" 2 "/resolved/kafka-features.sh --help" 90 1
+' _ "$project_dir")"
+rich_render_first_line="$(printf '%s\n' "$rich_render_output" | LC_ALL=C awk 'NR == 1 { print; exit }')"
+rich_compatibility_adjacency_count="$(printf '%s\n' "$rich_render_output" | LC_ALL=C grep -Fc 'Show Kafka features [needs v2.7+ (have v1.1.0)]')"
+rich_cursor_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  exec 3>&1
+  tput() {
+    case "$1" in
+      sc) printf "SC" ;;
+      rc) printf "RC" ;;
+      el) printf "EL" ;;
+      cuu1) printf "UP" ;;
+      civis) printf "HIDE" ;;
+      cnorm) printf "SHOW" ;;
+    esac
+  }
+  stty() {
+    [ "$1" = -g ] && { printf "saved-tty-state"; return 0; }
+    return 0
+  }
+  _god_menu_rich_cursor_start
+  _god_menu_rich_cursor_finish
+' _ "$project_dir")"
+rich_interrupt_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  _god_menu_open_tty() { exec 3<>/dev/null; _god_menu_tty_fd=3; }
+  _god_menu_close_tty() { exec 3<&-; exec 3>&-; _god_menu_tty_fd=""; }
+  _god_menu_width() { printf "90\n"; }
+  _god_menu_rich_cursor_start() { _god_menu_rich_anchor=0; }
+  _god_menu_rich_cursor_finish() { :; }
+  _god_menu_draw_rich_static() { :; }
+  _god_menu_rich_render_current() { :; }
+  _god_menu_rich_read_key() {
+    kill -INT "$$"
+    printf "INTERRUPT DID NOT BREAK KEY READ\n"
+    _god_menu_rich_key=unknown
+  }
+  _god_menu_select_rich $'"'"'Only row\t\t\t1'"'"' "only command" 1
+  interrupt_status=$?
+  printf "INTERRUPT STATUS:%s\n" "$interrupt_status"
+' _ "$project_dir" 2>&1)"
+rich_key_input="$rich_fixture/escape-input"
+printf '\033' > "$rich_key_input"
+rich_key_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  _god_menu_rich_read_escape_tail() { _god_menu_rich_escape_tail="[B"; }
+  exec 3< "$2"
+  _god_menu_rich_read_key
+  printf "KEY:%s\\n" "$_god_menu_rich_key"
+' _ "$project_dir" "$rich_key_input")"
+rich_unknown_key_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  _god_menu_rich_read_escape_tail() { _god_menu_rich_escape_tail="?"; }
+  exec 3< "$2"
+  _god_menu_rich_read_key
+  printf "KEY:%s\\n" "$_god_menu_rich_key"
+' _ "$project_dir" "$rich_key_input")"
+rich_rapid_arrow_input="$rich_fixture/rapid-arrow-input"
+printf '\033[B\033[B\n' > "$rich_rapid_arrow_input"
+rich_rapid_arrow_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  input_file=$2
+  _god_menu_open_tty() { exec 3<> "$input_file"; _god_menu_tty_fd=3; }
+  _god_menu_close_tty() { exec 3<&-; exec 3>&-; _god_menu_tty_fd=""; }
+  _god_menu_width() { printf "90\\n"; }
+  _god_menu_rich_cursor_start() { _god_menu_rich_anchor=0; }
+  _god_menu_rich_install_traps() { _god_menu_rich_interrupted=0; }
+  _god_menu_rich_cleanup() { :; }
+  _god_menu_draw_rich_static() { :; }
+  _god_menu_rich_render_current() { :; }
+  _god_menu_rich_redraw_selection() { :; }
+  rows=$'"'"'First\t\t\t1\nSecond\t\t\t1'"'"'
+  details=$'"'"'first command\nsecond command'"'"'
+  _god_menu_select_rich "$rows" "$details" 1 "" "KAFKA SEARCH RESULTS" "Smart search: consumers"
+  printf "RAPID:%s|%s\\n" "$_god_menu_choice" "$_god_menu_edited_command"
+' _ "$project_dir" "$rich_rapid_arrow_input")"
+rich_blocked_enter_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  _god_menu_open_tty() { exec 3<>/dev/null; _god_menu_tty_fd=3; }
+  _god_menu_close_tty() { exec 3<&-; exec 3>&-; _god_menu_tty_fd=""; }
+  _god_menu_width() { printf "90\n"; }
+  _god_menu_rich_cursor_start() { _god_menu_rich_anchor=0; }
+  _god_menu_rich_install_traps() { _god_menu_rich_interrupted=0; }
+  _god_menu_rich_cleanup() { :; }
+  _god_menu_draw_rich_static() { :; }
+  _god_menu_rich_render_current() { :; }
+  _god_menu_rich_read_key() {
+    key_reads=$((${key_reads:-0} + 1))
+    [ "$key_reads" -eq 1 ] && _god_menu_rich_key=enter || _god_menu_rich_key=escape
+  }
+  _god_menu_select_rich $'"'"'Unavailable\tneeds v2.7+ (have v1.1.0)\t\t0'"'"' "incompatible command" 1
+  printf "BLOCKED ENTER:%s\n" "$_god_menu_choice"
+' _ "$project_dir")"
+rich_editor_input="$rich_fixture/editor-input"
+printf 'e' > "$rich_editor_input"
+rich_editor_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  input_file=$2
+  _god_menu_open_tty() { exec 3<> "$input_file"; _god_menu_tty_fd=3; }
+  _god_menu_close_tty() { exec 3<&-; exec 3>&-; _god_menu_tty_fd=""; }
+  _god_menu_width() { printf "90\\n"; }
+  _god_menu_rich_cursor_start() { _god_menu_rich_anchor=0; }
+  _god_menu_rich_install_traps() { _god_menu_rich_interrupted=0; }
+  _god_menu_rich_cleanup() { :; }
+  _god_menu_draw_rich_static() { :; }
+  _god_menu_rich_render_current() { :; }
+  _god_menu_rich_redraw_selection() { :; }
+  _god_menu_readline_edit() {
+    printf "READLINE|%s\\n" "$1"
+    _god_menu_edited_command="$1 --extra"
+    return 0
+  }
+  demo_provider() { _god_menu_provider_detail="/resolved/kafka-consumer-groups.sh --list"; }
+  _god_menu_select_rich $'"'"'List consumer groups\t\t\t1'"'"' "" 1 demo_provider "KAFKA SEARCH RESULTS" "Smart search: consumers"
+  printf "INLINE EDIT|%s|%s\\n" "$_god_menu_choice" "$_god_menu_edited_command"
+' _ "$project_dir" "$rich_editor_input")"
+rich_editor_cancel_input="$rich_fixture/editor-cancel-input"
+printf 'e' > "$rich_editor_cancel_input"
+rich_editor_cancel_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  input_file=$2
+  _god_menu_open_tty() { exec 3<> "$input_file"; _god_menu_tty_fd=3; }
+  _god_menu_close_tty() { exec 3<&-; exec 3>&-; _god_menu_tty_fd=""; }
+  _god_menu_width() { printf "90\\n"; }
+  _god_menu_rich_cursor_start() { _god_menu_rich_anchor=0; }
+  _god_menu_rich_install_traps() { _god_menu_rich_interrupted=0; }
+  _god_menu_rich_cleanup() { :; }
+  _god_menu_draw_rich_static() { :; }
+  _god_menu_rich_render_current() { :; }
+  _god_menu_rich_redraw_selection() { :; }
+  _god_menu_readline_edit() { return 130; }
+  demo_provider() { _god_menu_provider_detail="/resolved/kafka-consumer-groups.sh --list"; }
+  _god_menu_select_rich $'"'"'List consumer groups\t\t\t1'"'"' "" 1 demo_provider "KAFKA SEARCH RESULTS" "Smart search: consumers"
+  status=$?
+  printf "EDIT CANCEL|%s|%s|%s\\n" "$status" "$_god_menu_choice" "$_god_menu_edited_command"
+' _ "$project_dir" "$rich_editor_cancel_input")"
+rich_result_read_bin="$rich_fixture/result-read-bin"
+rich_result_read_fd="$rich_fixture/result-read-fd"
+mkdir -p "$rich_result_read_bin"
+printf '#!/usr/bin/env bash\nprintf "%%s --edited" "$BASH_GOD_EDIT_INITIAL" > "$BASH_GOD_EDIT_RESULT"\n' > "$rich_result_read_bin/zsh"
+chmod 0755 "$rich_result_read_bin/zsh"
+: > "$rich_result_read_fd"
+rich_result_read_output="$(PATH="$rich_result_read_bin:$PATH" bash -c '
+  . "$1/bash_god/menu.sh"
+  exec 3<> "$2"
+  _god_menu_readline_edit "seed command"
+  printf "RESULT READ|%s\\n" "$_god_menu_edited_command"
+' _ "$project_dir" "$rich_result_read_fd")"
+theme_brand="$(printf '\033[1;35m')"
+theme_accent="$(printf '\033[1;36m')"
+theme_command="$(printf '\033[32m')"
+rich_theme_output="$(env -u NO_COLOR GOD_COLOR=always LANG=en_US.UTF-8 bash -c '
+  . "$1/bash_god/menu.sh"
+  _god_menu_style_init
+  _god_menu_rich_el="$(printf "\\033[K")"
+  exec 3>&1
+  rows=$'"'"'List consumer groups\t\t\t1'"'"'
+  _god_menu_draw_rich_static "$rows" 1 1 90 "KAFKA SEARCH RESULTS" "Smart search: consumers"
+  _god_menu_draw_rich_detail "$rows" 1 "echo list-groups" 90 1 view 0
+' _ "$project_dir")"
+rich_transition_input="$rich_fixture/transition-input"
+printf 'j\n' > "$rich_transition_input"
+rich_transition_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  input_file=$2
+  _god_menu_open_tty() { exec 3<> "$input_file"; _god_menu_tty_fd=3; }
+  _god_menu_close_tty() { exec 3<&-; exec 3>&-; _god_menu_tty_fd=""; }
+  _god_menu_width() { printf "90\\n"; }
+  _god_menu_rich_cursor_start() { _god_menu_rich_anchor=0; }
+  _god_menu_rich_install_traps() { _god_menu_rich_interrupted=0; }
+  _god_menu_rich_cleanup() { :; }
+  _god_menu_draw_rich_static() { :; }
+  _god_menu_rich_render_current() { trace="${trace:+$trace|}render:${_god_menu_rich_detail}"; }
+  _god_menu_rich_redraw_selection() { trace="${trace:+$trace|}rows:$1:$2"; }
+  demo_provider() { trace="${trace:+$trace|}provider:$1"; _god_menu_provider_detail="/resolved/command-$1"; }
+  _god_menu_select_rich $'"'"'First\t\t\t1\nSecond\t\t\t1'"'"' "" 1 demo_provider "KAFKA SEARCH RESULTS" "Smart search: consumers"
+  printf "TRANSITION:%s\\n" "$trace"
+' _ "$project_dir" "$rich_transition_input")"
+rich_cached_transition_input="$rich_fixture/cached-transition-input"
+printf 'jkj\n' > "$rich_cached_transition_input"
+rich_cached_transition_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  input_file=$2
+  _god_menu_open_tty() { exec 3<> "$input_file"; _god_menu_tty_fd=3; }
+  _god_menu_close_tty() { exec 3<&-; exec 3>&-; _god_menu_tty_fd=""; }
+  _god_menu_width() { printf "90\\n"; }
+  _god_menu_rich_cursor_start() { _god_menu_rich_anchor=0; }
+  _god_menu_rich_install_traps() { _god_menu_rich_interrupted=0; }
+  _god_menu_rich_cleanup() { :; }
+  _god_menu_draw_rich_static() { :; }
+  _god_menu_rich_render_current() { trace="${trace:+$trace|}render:${_god_menu_rich_detail}"; }
+  _god_menu_rich_redraw_selection() { trace="${trace:+$trace|}rows:$1:$2"; }
+  demo_provider() {
+    trace="${trace:+$trace|}provider:$1"
+    case "$1" in
+      1) cached_one=1 ;;
+      2) cached_two=1 ;;
+    esac
+    _god_menu_provider_detail="/resolved/command-$1"
+  }
+  demo_cached() {
+    case "$1" in
+      1) [ "${cached_one:-}" = 1 ] ;;
+      2) [ "${cached_two:-}" = 1 ] ;;
+    esac
+  }
+  _god_menu_select_rich $'"'"'First\t\t\t1\nSecond\t\t\t1'"'"' "" 1 demo_provider "KAFKA SEARCH RESULTS" "Smart search: consumers" demo_cached
+  printf "CACHED TRANSITION:%s\\n" "$trace"
+' _ "$project_dir" "$rich_cached_transition_input")"
+rm -rf "$rich_fixture"
+
+if contains "$rich_fallback_output" 'MATCHING OPERATIONS' && contains "$rich_fallback_output" "god kafka groups $group_list_number" && \
+   contains "$rich_picker_output" 'RICH PICKER ROWS' && contains "$rich_picker_output" 'List consumer groups' && \
+   contains "$rich_picker_output" "$rich_bin/kafka-consumer-groups.sh" && not_contains "$rich_picker_output" 'MATCHING OPERATIONS' && \
+   contains "$rich_picker_output" 'SECOND RICH PICKER DETAILS' && not_contains "$rich_picker_output" 'DETAILS DID NOT CHANGE' && \
+   not_contains "$rich_picker_output" 'Pick a row to run it' && contains "$rich_enter_output" 'FAST RESOLVED EXECUTION' && \
+   not_contains "$rich_enter_output" 'UNEXPECTED SLOW EXECUTION' && contains "$wrapped_preview" 'kafka-consumer-groups.sh' && \
+   contains "$rich_edit_output" 'EDITED COMMAND|printf edited-command||1' && \
+   not_contains "$rich_edit_output" 'UNEXPECTED PREPARED EXECUTION' && contains "$reviewed_execute_output" 'REVIEWED RUN|safe-template|safe-value' && \
+   contains "$rich_failure_output" 'VISIBLE CHILD ERROR' && contains "$rich_failure_output" 'RICH FAILURE STATUS:47' && \
+   not_contains "$rich_failure_output" 'hidden as incompatible' && \
+   not_contains "$reviewed_execute_output" 'UNEXPECTED CONFIRM' && \
+   contains "$execution_stream_output" 'stdout-visible' && contains "$execution_stream_output" 'stderr-visible' && \
+   contains "$rich_pending_output" 'PENDING EXECUTION|consume|2|1' && not_contains "$rich_pending_output" 'UNEXPECTED PREPARED EXECUTION' && \
+   contains "$rich_render_first_line" '╭' && contains "$rich_render_output" '│ KAFKA SEARCH RESULTS' && contains "$rich_render_output" 'Smart search: consumers' && \
+   not_contains "$rich_render_output" 'incompatible commands hidden' && \
+   contains "$rich_render_output" 'needs v2.7+ (have v1.1.0)' && \
+   contains "$rich_render_output" 'unavailable for detected version' && \
+   contains "$rich_render_output" '$ /resolved/kafka-features.sh' && \
+   not_contains "$rich_render_output" 'COMMAND' && not_contains "$rich_render_output" 'replace' && \
+   contains "$rich_cursor_output" 'HIDESHOW' && contains "$rich_interrupt_output" 'INTERRUPT STATUS:130' && \
+   not_contains "$rich_interrupt_output" 'INTERRUPT DID NOT BREAK KEY READ' && contains "$rich_key_output" 'KEY:down' && \
+   contains "$rich_unknown_key_output" 'KEY:unknown' && contains "$rich_rapid_arrow_output" 'RAPID:1|second command' && \
+   contains "$rich_blocked_enter_output" 'BLOCKED ENTER:-1' && \
+   contains "$rich_editor_output" 'READLINE|/resolved/kafka-consumer-groups.sh --list' && \
+   contains "$rich_editor_output" 'INLINE EDIT|0|/resolved/kafka-consumer-groups.sh --list --extra' && \
+   contains "$rich_editor_cancel_output" 'EDIT CANCEL|130|-1|' && \
+   contains "$rich_result_read_output" 'RESULT READ|seed command --edited' && \
+   contains "$rich_theme_output" "$theme_brand" && contains "$rich_theme_output" "$theme_accent" && \
+   contains "$rich_theme_output" "$theme_command" && \
+   contains "$rich_transition_output" 'rows:1:2|provider:2|render:/resolved/command-2' && \
+   not_contains "$rich_transition_output" 'Resolving…' && \
+   contains "$rich_cached_transition_output" 'rows:2:1|provider:1|render:/resolved/command-1' && \
+   not_contains "$rich_cached_transition_output" 'rows:2:1|render:Resolving…' && \
+   contains "$rich_cached_transition_output" 'rows:2:1|provider:1|render:/resolved/command-1|rows:1:2|provider:2|render:/resolved/command-2' && \
+   contains "$wrapped_preview" 'consumer.properties' && \
+   contains "$rich_version_resolution_output" "DISPLAY${tab:-$(printf '\t')}basename $rich_bin/../libs/kafka_*.jar .jar | cut -d- -f2-" && \
+   not_contains "$rich_version_resolution_output" '2>/dev/null' && \
+   contains "$rich_tools_resolution_output" "DISPLAY${tab:-$(printf '\t')}find $rich_bin/" && \
+   contains "$rich_compatibility_output" 'COMPATIBILITY HEADER:KAFKA SEARCH RESULTS' && \
+   not_contains "$rich_compatibility_output" 'COMPATIBILITY NOTICE:' && \
+   not_contains "$rich_compatibility_output" 'incompatible commands hidden' && \
+   contains "$rich_compatibility_output" "COMPATIBILITY DETAIL:basename $rich_bin/../libs/kafka_*.jar .jar | cut -d- -f2-" && \
+   contains "$rich_compatibility_output" $'Show kafka-broker-api-versions native help\tneeds v2.2+ (have v1.1.0)\t\t0' && \
+   contains "$rich_compatibility_output" $'Show kafka-features native help\tneeds v2.7+ (have v1.1.0)\t\t0' && \
+   contains "$rich_compatibility_output" $'Show the installed Kafka version\t\t\t1' && \
+   contains "$rich_all_versions_output" 'ALL-VERSION ROWS:' && \
+   contains "$rich_all_versions_output" $'Show kafka-features native help\tneeds v2.7+ (have v1.1.0)\t\t0' && \
+   contains "$rich_offset_compatibility_output" $'Show kafka-get-offsets native help\tneeds v3.0+ (have v1.1.0)\t\t0' && \
+   contains "$rich_missing_tool_output" $'Show kafka-get-offsets native help\tkafka-get-offsets.sh is not installed\t\t0' && \
+   [ "$(printf '%s\n' "$wrapped_preview" | LC_ALL=C awk 'END { print NR + 0 }')" -gt 1 ]; then
+  pass 'resolved search uses one inline editable picker and Enter reuses its prepared command'
+else
+  fail 'resolved search uses one inline editable picker and Enter reuses its prepared command'
+fi
+
+if [ "$rich_compatibility_adjacency_count" -eq 2 ]; then
+  pass 'rich picker keeps compatibility beside list and detail titles'
+else
+  fail 'rich picker keeps compatibility beside list and detail titles'
 fi
 
 service_query_output="$(GOD_COLOR=never "$god_cli" kafka q 'describe topic')"
@@ -596,6 +1120,11 @@ if [ "$bash_empty_status" -eq 0 ] && [ "$zsh_empty_status" -eq 0 ]; then
 else
   fail 'empty catalog works with failglob and zsh nomatch'
 fi
+
+run_focused_suite k8s-aws-catalog-smoke.sh
+run_focused_suite mongo-catalog-smoke.sh
+run_focused_suite path-services-catalog-smoke.sh
+run_focused_suite execution-rollout-smoke.sh
 
 if [ "$failures" -eq 0 ]; then
   printf '\n%d checks passed.\n' "$checks"

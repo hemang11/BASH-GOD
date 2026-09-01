@@ -9,8 +9,9 @@ BASH_GOD is a searchable memory layer for native DevOps commands. Its job is to 
 such as “how do I inspect consumer lag?” by showing a curated native command with enough context to
 understand and adapt it.
 
-BASH_GOD is not a replacement CLI. Catalog entries are inert text: BASH_GOD displays them and never
-executes them.
+BASH_GOD is not a replacement CLI. Catalog entries are text: BASH_GOD displays them and, when a
+service declares either `@discover` or `@execution PATH`, can run one only after the user reviews the
+resolved command and confirms. A catalog with neither execution marker stays display-only.
 
 ## Scope
 
@@ -22,8 +23,10 @@ This guide covers:
 - documenting parameters, optional flags, compatibility, and safety;
 - previewing and verifying catalog changes.
 
-It does not authorize running a displayed command against Kafka, MongoDB, Kubernetes, AWS, a remote
-host, or any other operational system.
+It does not authorize adding execution code to a catalog or to a service-specific code path. Adding
+`@discover` or `@execution PATH` opts a catalog into the one generic, already-reviewed execution
+engine (`bash_god/discover.sh`, `resolve.sh`, `execute.sh`); it never means writing new code that runs
+a command against Kafka, MongoDB, Kubernetes, AWS, a remote host, or any other operational system.
 
 ## Non-negotiable Rules
 
@@ -34,7 +37,9 @@ host, or any other operational system.
 5. Never store credentials, tokens, private keys, passwords, authenticated URIs, or decrypted values.
 6. Use placeholders such as `<topic_name>` and `<consumer_group>` for values users must replace.
 7. Mark state-changing operations accurately with `@risk WRITE`, `@risk WARN`, or `@risk DELETE`.
-8. Preserve BASH_GOD's knowledge-only model. Do not add code that executes catalog commands.
+8. Preserve BASH_GOD's knowledge-only model when adding or editing a catalog: never write code that
+   executes a command yourself. The one generic engine that may do so (gated by the catalog's own
+   `@discover` or `@execution PATH` marker) already exists; catalog changes are text, not code.
 9. Do not modify `.bashrc`, `.zshrc`, or another startup file while adding catalog knowledge.
 10. Preserve unrelated aliases, functions, files, and user changes.
 
@@ -163,6 +168,7 @@ Use this template:
 ```text
 @command Human-readable operation title
 @mode MODERN
+@since <first_verified_version>
 @description
 One concise explanation of what the native command reveals or changes.
 @run
@@ -183,6 +189,7 @@ Remove `@optional` or `@notes` when there is nothing useful to say. Do not add e
 ```text
 @command Describe one consumer group
 @mode MODERN
+@since 0.10.1
 @description
 Shows committed offsets, log-end offsets, and lag for one consumer group.
 @run
@@ -201,6 +208,7 @@ Read-only records omit `@risk`.
 ```text
 @command Human-readable mutation title
 @mode MODERN
+@since <first_verified_version>
 @risk WRITE
 @description
 States exactly what will change.
@@ -226,6 +234,7 @@ Add one new group block inside the existing service file:
 
 @command First operation in the group
 @mode MODERN
+@since <first_verified_version>
 @description
 Explains the operation.
 @run
@@ -288,17 +297,24 @@ special-case dispatcher branch.
 |---|---:|---|
 | `@title` | Once per file | Human-readable service title. Must precede every group. |
 | top-level `@description` | Once per file | Concise scope of the entire catalog. Must precede every group. |
+| top-level `@discover` | Optional, once per file | Discovers one installed tool family through `probe`/`root`/`scan`/`version`; mutually exclusive with `@execution PATH`; must precede every group. |
+| top-level `@execution PATH` | Optional, once per file | Opts a multi-tool catalog into the reviewed picker using the caller's PATH; mutually exclusive with `@discover`; must precede every group. |
+| top-level `@synced <version>` | Optional, once per discovery catalog | Dotted version the catalog was last verified against. Warns only, never filters. Must precede every group. |
 | `@group <name>` | Yes | Exact navigable group route. |
 | `@command <title>` | Per record | Unique, human-readable operation title within the group. |
 | `@mode <mode>` | Per record | Compatibility/context metadata; see accepted values below. |
 | `@risk WRITE` | Optional | Command intentionally changes state. |
 | `@risk WARN` | Optional | High-impact non-delete command that deserves extra review. |
 | `@risk DELETE` | Optional | Command removes data, metadata, or access. |
+| `@since <version>` | Every record in a catalog with `@discover` | Dotted compatibility floor. The picker blocks that record below it once a version is detected. Use `0.0` for service-neutral `LOCAL` rows. |
+| `@until <version>` | Optional | Dotted version the record is known to still work through. Hides the record above it once a version is detected. |
+| `@intent <slug>` | Optional | Lowercase kebab-case link across same-purpose records; the newest in-range one shows, others collapse into it. |
+| `@runnable NO` | Optional | Keeps a record copy-only. Requires a concise `@notes` reason and blocks picker edit/run. |
 | `@description` | Per record | What the command does, in plain language. |
 | `@run` | Per record | Exactly one physical line containing the copy-ready native command. |
 | `@params` | Optional | Required or already-present arguments as `NAME | EXAMPLE | MEANING`. |
 | `@optional` | Optional | Useful additions as `NAME | EXAMPLE | MEANING`. |
-| `@notes` | Optional | A concise compatibility, safety, or interpretation note. |
+| `@notes` | Optional | A concise compatibility, safety, or interpretation note. Required as the reason for `@runnable NO`. |
 | `@end` | Per record | Closes the command record. |
 
 Accepted modes are:
@@ -309,8 +325,94 @@ Accepted modes are:
 - `KRAFT`: Kafka KRaft-specific operation.
 
 Modes remain searchable metadata. The terminal keeps normal modes quiet and visibly renders only
-`LEGACY-ZK` as `[LEGACY]`. Do not invent another mode without updating validation, rendering, tests,
-and this guide together.
+`LEGACY-ZK` as `[LEGACY]`. `LOCAL` also exempts a record from path resolution and version filtering.
+Do not invent another mode without updating validation, rendering, tests, and this guide together.
+
+## Execution Metadata (`@discover`, `@execution PATH`, `@runnable NO`, `@synced`, `@since`, `@until`, `@intent`)
+
+These directives make a service executable rather than display-only. `@discover` is for one installed
+tool family; `@execution PATH` is for an intentional collection of host tools. Both use the same
+generic engine to resolve values and run a confirmed command (`discover.sh`, `resolve.sh`,
+`execute.sh`); nothing service-specific belongs in it.
+
+`@discover` is a block of `KEY | VALUE | MEANING` rows, placed once at the top of the file before any
+`@group`:
+
+```text
+@discover
+probe | kafka-topics.sh | Core topic-management tool; presence marks a resolved install
+root | /opt/kafka/bin | Common install layout
+scan | /opt | Bounded scan root when the common layout is absent
+version | kafka-topics.sh --version | Prints the installed version
+
+@synced 3.9
+```
+
+- `probe` is a bare file name, never a path — it is looked up inside a resolved directory.
+- `root` and `scan` are absolute paths. `root` is checked first, then `PATH`, then a bounded scan
+  under `scan`.
+- `version` is a command line run inside the resolved directory; its output's first dotted-numeric
+  token becomes the detected version, or `unknown` when none is found.
+- `@synced <version>` is service-level and records what the catalog was last verified against. It
+  only ever produces a caution line — it never hides a record. Do not use it as a stand-in for
+  `@until` on individual records.
+
+`@execution PATH` is a single top-level marker, placed before all groups. It does not have a
+`@discover` block, a resolved product directory, or a product version axis: the catalog's command
+spelling is executed through the caller's normal PATH. `@discover` and `@execution PATH` are mutually
+exclusive. A catalog with neither marker stays display-only.
+
+`@runnable NO` belongs inside a command record. Use it for raw in-tool snippets or shell-state changes
+that cannot usefully run in BASH_GOD's child process. It requires a non-empty `@notes` explanation;
+the picker keeps the row searchable and copyable, shows that explanation when selected, and blocks
+both `e` and Enter. `execute.sh` refuses it again as defense in depth.
+
+Per-command `@since <version>` and `@until <version>` state the range a record is known to be valid
+for. Every record in a catalog with `@discover` must declare `@since`; the validator rejects the
+whole catalog if even one is missing. Use the first release where the exact displayed syntax was
+verified, not merely the release where the underlying concept first existed. Use `@since 0.0` for a
+service-neutral `LOCAL` row whose availability is not governed by the detected service version.
+
+Once a version is detected, search keeps every matching record visible. A row below `@since` or above
+`@until` is marked with its exact compatibility reason and cannot be run or edited. This is always a
+per-command decision; do not replace it with a service-level count or hide incompatible rows.
+
+`@intent <slug>` links same-purpose records that overlap across a version boundary, such as a modern
+and a legacy-syntax form of the same operation:
+
+```text
+@command List topics through a broker
+@mode MODERN
+@since 0.11
+@intent list-topics
+...
+
+@command List topics through ZooKeeper
+@mode LEGACY-ZK
+@until 2.8
+@intent list-topics
+...
+```
+
+On a version where both are valid (0.11–2.8 here), search shows only the newest in-range member (the
+one with the higher `@since`, absent counting as 0) with a dim note that an older variant exists —
+never a silent duplicate, never a reordering. Disjoint ranges need no `@intent` at all.
+
+`--tree`, `--tree --full`, `--details`, `--keys`, and `--help` never trigger execution, on any service,
+at any scope — they only ever render text. Only the plain `q`/`-q` route, with none of those view keys,
+on a TTY, may offer to run a search result.
+
+For an executable search result, the interactive picker stays in the caller's terminal buffer: it
+lists operation titles and shows the highlighted operation as a fully wrapped `$ <resolved command>`
+panel. Arrow keys update only the selection and panel; `e` leaves browse mode and seeds a normal
+readline prompt with the displayed command, Enter runs the reviewed command, and Escape cancels
+browse mode. Do not introduce an alternate terminal screen or a second confirmation prompt. If a
+placeholder remains after query resolution, prompt only after the operator chooses that row and keep
+that prompt in the same terminal flow. A missing execution path, non-TTY, narrow terminal, or
+unsupported terminal capability keeps the established static `MATCHING OPERATIONS` result table.
+
+When a native release changes what a record needs, see `bash_god/docs/service-sync.md` for the
+maintainer runbook on adding `@since`/`@until`/`@intent` and bumping `@synced`.
 
 ## Writing Good Records
 
@@ -357,7 +459,9 @@ command under `@optional`.
 ### Notes
 
 Use notes only for information that changes safe or correct use, such as version differences, file
-sensitivity, prerequisites, or interpretation of output. Do not restate the description.
+sensitivity, prerequisites, or interpretation of output. Do not restate the description. For a
+copy-only record, the note is the selected picker panel's explanation, so write it as the direct
+reason that edit/run is unavailable.
 
 ## Native Help Knowledge
 
@@ -367,6 +471,7 @@ the service's `native` group:
 ```text
 @command Show kafka-topics native help
 @mode MODERN
+@since 0.8
 @description
 Displays every option supported by the installed kafka-topics version.
 @run
@@ -374,8 +479,9 @@ Displays every option supported by the installed kafka-topics version.
 @end
 ```
 
-Do not create `god` code that detects or invokes the tool. The user chooses whether to copy and run
-the displayed help command.
+Do not create `god` code that detects or invokes the tool. Whether the user copies the displayed help
+command or, for an executable service, picks and confirms it through the generic engine, the choice
+and the confirm step are always theirs.
 
 ## Safety and Secrets
 
@@ -421,8 +527,8 @@ GOD_COLOR=never ./god --version
 Then run the non-operational checks:
 
 ```bash
-bash -n BASH_GOD.sh god bash_god/core.sh bash_god/catalog.sh bash_god/art.sh bash_god/maintenance.sh bash_god/render.sh bash_god/search.sh bash_god/tree.sh bash_god/tests/smoke.sh packaging/*.sh packaging/tests/*.sh
-zsh -n BASH_GOD.sh god bash_god/core.sh bash_god/catalog.sh bash_god/art.sh bash_god/render.sh bash_god/search.sh bash_god/tree.sh bash_god/tests/smoke.sh
+bash -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh packaging/*.sh packaging/tests/*.sh
+zsh -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh
 ./bash_god/tests/smoke.sh
 ./packaging/tests/runtime-package-smoke.sh
 ./packaging/tests/install-smoke.sh
@@ -456,9 +562,12 @@ Confirm all of the following:
 Changing the catalog grammar or navigation model is a framework change, not a normal knowledge
 addition. When such a change is genuinely required, update these together:
 
-1. initialization/dispatch in `bash_god/core.sh`, discovery/validation in `bash_god/catalog.sh`,
-   bare-TTY artwork in `bash_god/art.sh`, normal views in `bash_god/render.sh`, search in
-   `bash_god/search.sh`, or hierarchy rendering in `bash_god/tree.sh`, according to ownership;
+1. initialization/dispatch in `bash_god/core.sh`, catalog discovery/validation/readers in
+   `bash_god/catalog.sh`, bare-TTY artwork in `bash_god/art.sh`, normal views in
+   `bash_god/render.sh`, search in `bash_god/search.sh`, hierarchy rendering in `bash_god/tree.sh`,
+   the interactive picker in `bash_god/menu.sh`, service-path discovery in `bash_god/discover.sh`,
+   value resolution in `bash_god/resolve.sh`, or confirmed execution in `bash_god/execute.sh`,
+   according to ownership;
 2. smoke coverage in `bash_god/tests/smoke.sh`;
 3. `bash_god/docs/architecture/bash-god-knowledge-base-architecture.md`;
 4. this `AGENTS.md` field reference and workflow.
@@ -480,7 +589,11 @@ Current limitations:
 - smart search is ranked word matching, not an embedding model, so distant synonyms may still need
   a broader `--any` query or an explicit regex;
 - correctness of a native command still depends on the installed CLI version and environment;
-- BASH_GOD deliberately does not validate a displayed command by running it.
+- BASH_GOD deliberately does not validate a displayed command by running it — the confirm step is
+  the user's own validation, not an automated one;
+- execution is generic for catalogs declaring `@discover` or `@execution PATH`; a discoverable
+  service without a fresh resolved path and a catalog with neither marker keep the static,
+  copy-ready result view.
 
 ## Definition of Done
 
