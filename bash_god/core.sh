@@ -337,10 +337,17 @@ _god_resync_all() {
       tool="$(_god_discover_tool "$service")"
       version="$(_god_discover_version "$service")"
       if [ -n "$tool" ]; then
-        printf '  %s%-16s%s %s%s%s %s(%s v%s)%s\n' \
-          "$_GOD_ACCENT" "$service" "$_GOD_RESET" \
-          "$_GOD_COMMAND" "$path" "$_GOD_RESET" \
-          "$_GOD_DIM" "$tool" "${version:-unknown}" "$_GOD_RESET"
+        if [ "${version:-unknown}" = unknown ]; then
+          printf '  %s%-16s%s %s%s%s %s(via %s · version unavailable)%s\n' \
+            "$_GOD_ACCENT" "$service" "$_GOD_RESET" \
+            "$_GOD_COMMAND" "$path" "$_GOD_RESET" \
+            "$_GOD_DIM" "$tool" "$_GOD_RESET"
+        else
+          printf '  %s%-16s%s %s%s%s %s(via %s · v%s)%s\n' \
+            "$_GOD_ACCENT" "$service" "$_GOD_RESET" \
+            "$_GOD_COMMAND" "$path" "$_GOD_RESET" \
+            "$_GOD_DIM" "$tool" "$version" "$_GOD_RESET"
+        fi
       else
         printf '  %s%-16s%s %s%s%s %s(version %s)%s\n' \
           "$_GOD_ACCENT" "$service" "$_GOD_RESET" \

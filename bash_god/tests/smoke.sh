@@ -260,7 +260,7 @@ root_resync_usage_status=0
 GOD_COLOR=never "$god_cli" --resync unexpected >/dev/null 2>&1 || root_resync_usage_status=$?
 expected_root_resync_calls="$(printf 'aws\nelasticsearch\nk8s\nkafka\nmongo')"
 if contains "$root_resync_output" 'BASH_GOD / RESYNC' && \
-   contains "$root_resync_output" '/fixtures/elasticsearch (curl v8.15.2)' && \
+   contains "$root_resync_output" '/fixtures/elasticsearch (via curl · v8.15.2)' && \
    contains "$root_resync_output" '/fixtures/kafka (version 1.1.0)' && \
    contains "$root_resync_output" '/fixtures/mongo (version 2.4.1)' && \
    contains "$root_resync_output" 'aws              not found (aws)' && \
