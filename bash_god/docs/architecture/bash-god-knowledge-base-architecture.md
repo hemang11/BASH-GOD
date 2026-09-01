@@ -1,6 +1,6 @@
 # BASH_GOD Knowledge Base Architecture
 
-**Status:** Implemented in BASH_GOD 0.0.2.1. Reviewed execution is now generic across the current
+**Status:** Implemented in BASH_GOD 0.0.2.2. Reviewed execution is now generic across the current
 service catalogs.
 
 ## Context / Problem
@@ -226,7 +226,7 @@ Rules:
 - Group names and command titles are unique within their scopes, ignoring case.
 
 The catalog file itself is never sourced, evaluated as code, or treated as anything but text: parsing
-it can never run a line it contains. In BASH_GOD 0.0.2.1, the *value* of one reviewed `@run` line is
+it can never run a line it contains. In BASH_GOD 0.0.2.2, the *value* of one reviewed `@run` line is
 handed to a child shell as an argument-safe template for catalogs declaring
 `@discover` or `@execution PATH`; all other views stop at the screen. Only regular, non-symlink files
 at `catalog/<valid-service-name>/service.god` are accepted. The parent directory becomes the exact
@@ -342,7 +342,7 @@ no `@discover` block, applies no version policy. `--all-versions` exposes every 
 make an incompatible row executable; `@synced` never filters, only warns when the detected version
 exceeds it.
 
-### Execution (generic, 0.0.2.1)
+### Execution (generic, 0.0.2.2)
 
 A view key (`--tree`, `--details`, `--keys`, `--help`, `--full`) never offers execution, on any
 service, at any scope — those routes only ever render text. Only the plain `q`/`-q` route, with no
@@ -382,7 +382,7 @@ with examples for the current scope. The routing invariant is that `--help`, `--
 changing the selected view; `-q` remains the query route. `--full` always modifies `--tree`;
 `<number>` always requires numbered group rows. `god --version`
 and root-level `god -v` print only
-`BASH_GOD 0.0.2.1` and `License: MIT`; they do not report the host shell version.
+`BASH_GOD 0.0.2.2` and `License: MIT`; they do not report the host shell version.
 
 - `0`: successful display or search with matches.
 - `1`: valid search with no matches.
