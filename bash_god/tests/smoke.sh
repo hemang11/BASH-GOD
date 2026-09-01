@@ -146,6 +146,7 @@ kafka_since_count="$(LC_ALL=C awk '/^@since[[:space:]]+/ { count++ } END { print
 offset_command_count="$(catalog_group_command_count "$kafka_catalog" offset)"
 native_command_count="$(catalog_group_command_count "$kafka_catalog" native)"
 access_command_count="$(catalog_group_command_count "$kafka_catalog" access)"
+k8s_list_pods_number="$(catalog_entry_number "$k8s_catalog" pods 'List pods in a namespace')"
 consume_exact_number="$(catalog_entry_number "$kafka_catalog" consume 'Read from an exact partition offset')"
 consume_exact_label="$(printf '%02d' "$consume_exact_number")"
 offset_lag_number="$(catalog_entry_number "$kafka_catalog" offset 'Show consumer-group offsets and lag')"
@@ -534,6 +535,19 @@ rich_pending_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
   _god_execute_resolved() { printf "UNEXPECTED PREPARED EXECUTION\\n"; }
   god kafka consume q "Read a topic from beginning"
 ' _ "$project_dir")"
+rich_unmapped_placeholder_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_resolve_prompt_value() {
+    printf "PLACEHOLDER PROMPT|%s|%s\\n" "$1" "$2" >&2
+    printf "ontic-app\\n"
+  }
+  _god_resolve_command_interactive k8s "$2" pods "$3" /resolved/kubectl "get all pods"
+' _ "$project_dir" "$k8s_catalog" "$k8s_list_pods_number" 2>&1)"
+rich_unresolved_placeholder_guard_output="$(bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_execute_resolved "kubectl get pods -n <namespace>" "kubectl get pods -n <namespace>" "" 1
+  printf "UNRESOLVED STATUS:%s\\n" "$?"
+' _ "$project_dir" 2>&1)"
 rich_failure_output="$(HOME="$rich_fixture" GOD_COLOR=never bash -c '
   . "$1/BASH_GOD.sh"
   _god_stdout_is_terminal() { return 0; }
@@ -676,26 +690,25 @@ rich_key_input="$rich_fixture/escape-input"
 printf '\033' > "$rich_key_input"
 rich_key_output="$(bash -c '
   . "$1/bash_god/menu.sh"
-  _god_menu_rich_read_escape_tail() { _god_menu_rich_escape_tail="[B"; }
-  exec 3< "$2"
+  _god_menu_rich_read_sequence() { printf "1b5b42"; }
   _god_menu_rich_read_key
   printf "KEY:%s\\n" "$_god_menu_rich_key"
-' _ "$project_dir" "$rich_key_input")"
+' _ "$project_dir")"
 rich_unknown_key_output="$(bash -c '
   . "$1/bash_god/menu.sh"
-  _god_menu_rich_read_escape_tail() { _god_menu_rich_escape_tail="?"; }
-  exec 3< "$2"
+  _god_menu_rich_read_sequence() { printf "1b3f"; }
   _god_menu_rich_read_key
   printf "KEY:%s\\n" "$_god_menu_rich_key"
-' _ "$project_dir" "$rich_key_input")"
+' _ "$project_dir")"
 # A terminal can expose ESC before the rest of an arrow sequence on a busy
-# remote host. Keep the descriptor open, then write the tail after the old
-# 60ms window. The parser must still consume it as one down-arrow event rather
-# than cancel and leave literal "[B" at the caller's prompt.
+# remote host. Feed the full sequence to the one reader after the old 60ms
+# window; it must still report down rather than leak literal "[B" to the
+# caller prompt.
 rich_delayed_tail_fifo="$rich_fixture/delayed-escape-tail"
 mkfifo "$rich_delayed_tail_fifo" || exit 1
 (
   exec 4> "$rich_delayed_tail_fifo"
+  printf '\033' >&4
   sleep 0.12
   printf '[B' >&4
 ) &
@@ -703,8 +716,8 @@ rich_delayed_tail_writer=$!
 rich_delayed_tail_output="$(bash -c '
   . "$1/bash_god/menu.sh"
   exec 3< "$2"
-  _god_menu_rich_read_escape_tail
-  printf "DELAYED TAIL:%s\\n" "$_god_menu_rich_escape_tail"
+  _god_menu_rich_read_key
+  printf "DELAYED KEY:%s\\n" "$_god_menu_rich_key"
 ' _ "$project_dir" "$rich_delayed_tail_fifo")"
 wait "$rich_delayed_tail_writer" || :
 # A regular file is not a raw terminal: Bash is allowed to buffer its queued
@@ -882,6 +895,12 @@ if contains "$rich_fallback_output" 'MATCHING OPERATIONS' && contains "$rich_fal
    not_contains "$reviewed_execute_output" 'UNEXPECTED CONFIRM' && \
    contains "$execution_stream_output" 'stdout-visible' && contains "$execution_stream_output" 'stderr-visible' && \
    contains "$rich_pending_output" 'PENDING EXECUTION|consume|2|1' && not_contains "$rich_pending_output" 'UNEXPECTED PREPARED EXECUTION' && \
+   contains "$rich_unmapped_placeholder_output" 'PLACEHOLDER PROMPT|Value for namespace|<namespace>' && \
+   contains "$rich_unmapped_placeholder_output" 'DISPLAY	kubectl get pods -n ontic-app' && \
+   contains "$rich_unmapped_placeholder_output" 'TEMPLATE	kubectl get pods -n "${1}"' && \
+   contains "$rich_unmapped_placeholder_output" 'VALUE	ontic-app' && \
+   contains "$rich_unresolved_placeholder_guard_output" 'unresolved placeholder and was not run' && \
+   contains "$rich_unresolved_placeholder_guard_output" 'UNRESOLVED STATUS:2' && \
    contains "$rich_render_first_line" '╭' && contains "$rich_render_output" '│ KAFKA SEARCH RESULTS' && contains "$rich_render_output" 'Smart search: consumers' && \
    not_contains "$rich_render_output" 'incompatible commands hidden' && \
    contains "$rich_render_output" 'needs v2.7+ (have v1.1.0)' && \
@@ -890,7 +909,7 @@ if contains "$rich_fallback_output" 'MATCHING OPERATIONS' && contains "$rich_fal
    not_contains "$rich_render_output" 'COMMAND' && not_contains "$rich_render_output" 'replace' && \
    contains "$rich_cursor_output" 'HIDESHOW' && contains "$rich_interrupt_output" 'INTERRUPT STATUS:130' && \
    not_contains "$rich_interrupt_output" 'INTERRUPT DID NOT BREAK KEY READ' && contains "$rich_key_output" 'KEY:down' && \
-   contains "$rich_unknown_key_output" 'KEY:unknown' && contains "$rich_delayed_tail_output" 'DELAYED TAIL:[B' && \
+   contains "$rich_unknown_key_output" 'KEY:unknown' && contains "$rich_delayed_tail_output" 'DELAYED KEY:down' && \
    contains "$rich_rapid_arrow_output" 'RAPID:1|second command' && \
    contains "$rich_blocked_enter_output" 'BLOCKED ENTER:-1' && \
    contains "$rich_editor_output" 'READLINE|/resolved/kafka-consumer-groups.sh --list' && \

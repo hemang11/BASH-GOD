@@ -413,7 +413,9 @@ panel. Arrow keys update only the selection and panel; `e` leaves browse mode an
 readline prompt with the displayed command, Enter runs the reviewed command, and Escape cancels
 browse mode. Do not introduce an alternate terminal screen or a second confirmation prompt. If a
 placeholder remains after query resolution, prompt only after the operator chooses that row and keep
-that prompt in the same terminal flow. A missing execution path, non-TTY, narrow terminal, or
+that prompt in the same terminal flow. The generic resolver must also catch every raw `<...>` span
+that catalog parameter metadata misses; it prompts for the value or refuses execution, never passes
+the placeholder to a shell. A missing execution path, non-TTY, narrow terminal, or
 unsupported terminal capability keeps the established static `MATCHING OPERATIONS` result table.
 
 When a native release changes what a record needs, see `bash_god/docs/service-sync.md` for the

@@ -734,20 +734,19 @@ _god_menu_rich_redraw_selection() {
   _god_menu_draw_rich_row "$_god_menu_rich_rows" "$new_selected" 1 "$_god_menu_rich_width"
 }
 
-# Read the tail of an ESC sequence without the one-second Bash 3.2 timeout.
-# The picker keeps the terminal raw for the whole browse loop, so queued arrow
-# bytes stay inside the picker instead of being echoed by the parent shell.
-_god_menu_rich_read_escape_tail() {
-  local tail
-
-  _god_menu_rich_escape_tail=''
-  tail="$(perl -MFcntl=F_GETFL,F_SETFL,O_NONBLOCK -MTime::HiRes=time -e '
+# Read one complete keyboard sequence through one reader. Bash 3.2 can buffer
+# an arrow tail after its `read -n 1` consumes ESC; handing that tail to a Perl
+# child then races and can leave literal "[B" at the caller prompt. Let Perl
+# own both the first byte and the optional ESC tail, then return hex so shell
+# variables never have to carry a control byte.
+_god_menu_rich_read_sequence() {
+  perl -MFcntl=F_GETFL,F_SETFL,O_NONBLOCK -MTime::HiRes=time -e '
     my $flags = fcntl(STDIN, F_GETFL, 0);
-    # An arrow key is normally delivered as one three-byte write, but an
-    # overloaded terminal, serial console, or SSH hop can expose ESC before
-    # its "[B" tail.  Do not restore the terminal after that first byte and
-    # leak the tail into the caller shell.  A quarter-second window is still
-    # short for a deliberate Escape while covering a delayed terminal read.
+    my $count = sysread(STDIN, my $first, 1);
+    exit 1 unless defined $count && $count == 1;
+    # An arrow key is normally delivered atomically, but a busy terminal,
+    # serial console, or SSH hop can expose ESC before its tail. Keep reading
+    # here so the sequence cannot be split across two input buffers.
     my $deadline = time + 0.25;
     sub read_byte {
       my $remaining = $deadline - time;
@@ -761,61 +760,72 @@ _god_menu_rich_read_escape_tail() {
       return undef unless defined $count && $count == 1;
       return $byte;
     }
-    my $first = read_byte();
-    exit 0 unless defined $first;
     my $bytes = $first;
-    if ($first eq q{[}) {
-      for (1 .. 14) {
-        my $next = read_byte();
-        last unless defined $next;
-        $bytes .= $next;
-        last if $next =~ /[\x40-\x7e]/;
+    if ($first eq "\e") {
+      my $prefix = read_byte();
+      if (defined $prefix) {
+        $bytes .= $prefix;
+        if ($prefix eq q{[}) {
+          for (1 .. 14) {
+            my $next = read_byte();
+            last unless defined $next;
+            $bytes .= $next;
+            last if $next =~ /[\x40-\x7e]/;
+          }
+        } elsif ($prefix eq q{O}) {
+          my $next = read_byte();
+          $bytes .= $next if defined $next;
+        }
       }
-    } elsif ($first eq q{O}) {
-      my $next = read_byte();
-      $bytes .= $next if defined $next;
     }
-    print $bytes;
-  ' <&3 2>/dev/null)"
-  [ -n "$tail" ] || return 1
-  _god_menu_rich_escape_tail=$tail
+    print unpack(q{H*}, $bytes);
+  ' <&3 2>/dev/null
 }
 
-# Normalise terminal input into names rather than making every caller carry
-# escape-sequence parsing. A bare Escape cancels in roughly 250ms rather than
-# waiting a whole Bash 3.2 timeout interval, while a delayed arrow-key tail
-# remains inside the picker instead of leaking to the parent shell.
+# Normalise the one-reader key sequence into names rather than making every
+# picker caller carry terminal escape parsing. A bare Escape cancels in roughly
+# 250ms; a delayed arrow tail remains inside the same reader.
 _god_menu_rich_read_key() {
-  local key tail
+  local sequence
 
   _god_menu_rich_key=''
-  IFS= read -r -s -n 1 key <&3 || return 1
-  case "$key" in
-    '') _god_menu_rich_key=enter ;;
-    $'\177'|$'\010') _god_menu_rich_key=backspace ;;
-    $'\001') _god_menu_rich_key=home ;;
-    $'\005') _god_menu_rich_key=end ;;
-    $'\025') _god_menu_rich_key=clear ;;
-    $'\027') _god_menu_rich_key=word_backspace ;;
-    "$(printf '\033')")
-      _god_menu_rich_read_escape_tail || { _god_menu_rich_key=escape; return 0; }
-      tail=$_god_menu_rich_escape_tail
-      case "$tail" in
-        '[A'|'OA') _god_menu_rich_key=up ;;
-        '[B'|'OB') _god_menu_rich_key=down ;;
-        '[C'|'OC') _god_menu_rich_key=right ;;
-        '[D'|'OD') _god_menu_rich_key=left ;;
-        '[1;3C'|'[1;5C'|'[1;9C'|'[5C'|'f') _god_menu_rich_key=word_right ;;
-        '[1;3D'|'[1;5D'|'[1;9D'|'[5D'|'b') _god_menu_rich_key=word_left ;;
-        '[3;3~'|'[3;5~'|'d') _god_menu_rich_key=word_delete ;;
-        $'\177'|$'\010') _god_menu_rich_key=word_backspace ;;
-        '[H'|'[1~'|'[7~'|'OH') _god_menu_rich_key=home ;;
-        '[F'|'[4~'|'[8~'|'OF') _god_menu_rich_key=end ;;
-        '[3~') _god_menu_rich_key=delete ;;
-        *) _god_menu_rich_key=unknown ;;
-      esac
-      ;;
-    *) _god_menu_rich_key=$key ;;
+  sequence="$(_god_menu_rich_read_sequence)" || return 1
+  case "$sequence" in
+    0a|0d) _god_menu_rich_key=enter ;;
+    7f|08) _god_menu_rich_key=backspace ;;
+    01) _god_menu_rich_key=home ;;
+    05) _god_menu_rich_key=end ;;
+    15) _god_menu_rich_key=clear ;;
+    17) _god_menu_rich_key=word_backspace ;;
+    1b) _god_menu_rich_key=escape ;;
+    1b5b41|1b4f41) _god_menu_rich_key=up ;;
+    1b5b42|1b4f42) _god_menu_rich_key=down ;;
+    1b5b43|1b4f43) _god_menu_rich_key=right ;;
+    1b5b44|1b4f44) _god_menu_rich_key=left ;;
+    1b5b313b3343|1b5b313b3543|1b5b313b3943|1b5b3543|66) _god_menu_rich_key=word_right ;;
+    1b5b313b3344|1b5b313b3544|1b5b313b3944|1b5b3544|62) _god_menu_rich_key=word_left ;;
+    1b5b333b337e|1b5b333b357e|64) _god_menu_rich_key=word_delete ;;
+    1b5b48|1b5b317e|1b5b377e|1b4f48) _god_menu_rich_key=home ;;
+    1b5b46|1b5b347e|1b5b387e|1b4f46) _god_menu_rich_key=end ;;
+    1b5b337e) _god_menu_rich_key=delete ;;
+    31) _god_menu_rich_key=1 ;;
+    32) _god_menu_rich_key=2 ;;
+    33) _god_menu_rich_key=3 ;;
+    34) _god_menu_rich_key=4 ;;
+    35) _god_menu_rich_key=5 ;;
+    36) _god_menu_rich_key=6 ;;
+    37) _god_menu_rich_key=7 ;;
+    38) _god_menu_rich_key=8 ;;
+    39) _god_menu_rich_key=9 ;;
+    65) _god_menu_rich_key=e ;;
+    45) _god_menu_rich_key=E ;;
+    6a) _god_menu_rich_key=j ;;
+    4a) _god_menu_rich_key=J ;;
+    6b) _god_menu_rich_key=k ;;
+    4b) _god_menu_rich_key=K ;;
+    71) _god_menu_rich_key=q ;;
+    51) _god_menu_rich_key=Q ;;
+    *) _god_menu_rich_key=unknown ;;
   esac
 }
 

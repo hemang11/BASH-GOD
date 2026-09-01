@@ -124,6 +124,10 @@ _god_execute_resolved() {
   shift 4
 
   [ -n "$template" ] || return 2
+  if _god_resolve_is_placeholder "$template"; then
+    printf 'BASH_GOD: the command still contains an unresolved placeholder and was not run.\n' >&2
+    return 2
+  fi
   if _god_execute_is_state_mutating "$template"; then
     printf 'BASH_GOD: "%s" only changes the state of a child shell, so running it here would do nothing.\n' "${template%% *}" >&2
     printf 'Run it directly in your own shell instead.\n' >&2

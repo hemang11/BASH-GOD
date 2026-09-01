@@ -139,6 +139,35 @@ _god_resolve_is_placeholder() {
   esac
 }
 
+# _god_resolve_placeholder_spans TEXT
+#
+# Emits each distinct <placeholder> span in catalog text. Parameter metadata
+# normally maps every span to a useful prompt, but this fallback prevents an
+# incomplete record from ever reaching bash -c with shell metacharacters.
+_god_resolve_placeholder_spans() {
+  printf '%s\n' "$1" | LC_ALL=C awk '
+    {
+      text = $0
+      while (match(text, /<[^<>]+>/)) {
+        span = substr(text, RSTART, RLENGTH)
+        if (!seen[span]++) print span
+        text = substr(text, RSTART + RLENGTH)
+      }
+    }
+  '
+}
+
+# _god_resolve_placeholder_meaning SPAN
+_god_resolve_placeholder_meaning() {
+  local meaning
+
+  meaning=$1
+  meaning=${meaning#<}
+  meaning=${meaning%>}
+  meaning="${meaning//_/ }"
+  printf 'Value for %s\n' "$meaning"
+}
+
 # _god_resolve_replace_span TEXT SEARCH REPLACEMENT
 #
 # Literal (non-regex) replacement of every occurrence of SEARCH in TEXT. This
@@ -337,6 +366,10 @@ _god_resolve_prompt_value() {
   exec 3<&- 2>/dev/null
   exec 3>&- 2>/dev/null
   [ "$status" -eq 0 ] || return 130
+  if [ -z "$reply" ] && _god_resolve_is_placeholder "$example"; then
+    printf 'BASH_GOD: a value is required for %s.\n' "$meaning" >&3
+    return 1
+  fi
   printf '%s\n' "${reply:-$example}"
 }
 
@@ -360,7 +393,7 @@ _god_resolve_prompt_value() {
 _god_resolve_command() {
   local service catalog group entry execution_path query
   local mode run display template tag discover_probes discovered_tool execution_mode
-  local name example meaning span query_words
+  local name example meaning span query_words placeholder documented_span covered
   local -a param_names param_examples param_spans param_meanings param_keyword_classes param_bound
   local -a name_pool num_pool values
   local pool_index bound value_count i
@@ -524,6 +557,28 @@ _god_resolve_command() {
     fi
     i=$((i + 1))
   done
+
+  # Parameter metadata can name a flag (for example, -n) instead of repeating
+  # the <namespace> span it documents. Prompt every span no declared parameter
+  # already owns, so incomplete catalog metadata cannot leak raw placeholder
+  # syntax to bash -c. A declared span may contain a placeholder inside a
+  # larger value, such as User:<principal>.
+  while IFS= read -r placeholder; do
+    [ -n "$placeholder" ] || continue
+    covered=0
+    i=0
+    while [ "$i" -lt "$value_count" ]; do
+      documented_span="${param_spans[$i]}"
+      case "$documented_span" in
+        *"$placeholder"*) covered=1; break ;;
+      esac
+      i=$((i + 1))
+    done
+    [ "$covered" = 1 ] && continue
+    printf 'PENDING\t%s\t%s\t%s\t%s\n' \
+      "$placeholder" "$placeholder" "$placeholder" \
+      "$(_god_resolve_placeholder_meaning "$placeholder")"
+  done < <(_god_resolve_placeholder_spans "$run")
 }
 
 # _god_resolve_command_interactive SERVICE CATALOG GROUP ENTRY EXECUTION_PATH QUERY
