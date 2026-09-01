@@ -417,6 +417,8 @@ that prompt in the same terminal flow. The generic resolver must also catch ever
 that catalog parameter metadata misses; it prompts for the value or refuses execution, never passes
 the placeholder to a shell. A missing execution path, non-TTY, narrow terminal, or
 unsupported terminal capability keeps the established static `MATCHING OPERATIONS` result table.
+Rich keyboard parsing may require a bare `perl` executable, but must never import optional Perl
+modules; otherwise the static fallback must remain available.
 
 When a native release changes what a record needs, see `bash_god/docs/service-sync.md` for the
 maintainer runbook on adding `@since`/`@until`/`@intent` and bumping `@synced`.

@@ -740,40 +740,35 @@ _god_menu_rich_redraw_selection() {
 # own both the first byte and the optional ESC tail, then return hex so shell
 # variables never have to carry a control byte.
 _god_menu_rich_read_sequence() {
-  perl -MFcntl=F_GETFL,F_SETFL,O_NONBLOCK -MTime::HiRes=time -e '
-    my $flags = fcntl(STDIN, F_GETFL, 0);
+  perl -e '
     my $count = sysread(STDIN, my $first, 1);
     exit 1 unless defined $count && $count == 1;
     # An arrow key is normally delivered atomically, but a busy terminal,
     # serial console, or SSH hop can expose ESC before its tail. Keep reading
     # here so the sequence cannot be split across two input buffers.
-    my $deadline = time + 0.25;
     sub read_byte {
-      my $remaining = $deadline - time;
-      return undef if $remaining <= 0;
+      my ($timeout) = @_;
       my $ready = q{};
       vec($ready, fileno(STDIN), 1) = 1;
-      return undef unless select(my $out = $ready, undef, undef, $remaining);
-      fcntl(STDIN, F_SETFL, $flags | O_NONBLOCK);
+      return undef unless select(my $out = $ready, undef, undef, $timeout);
       my $count = sysread(STDIN, my $byte, 1);
-      fcntl(STDIN, F_SETFL, $flags);
       return undef unless defined $count && $count == 1;
       return $byte;
     }
     my $bytes = $first;
     if ($first eq "\e") {
-      my $prefix = read_byte();
+      my $prefix = read_byte(0.25);
       if (defined $prefix) {
         $bytes .= $prefix;
         if ($prefix eq q{[}) {
           for (1 .. 14) {
-            my $next = read_byte();
+            my $next = read_byte(0.05);
             last unless defined $next;
             $bytes .= $next;
             last if $next =~ /[\x40-\x7e]/;
           }
         } elsif ($prefix eq q{O}) {
-          my $next = read_byte();
+          my $next = read_byte(0.05);
           $bytes .= $next if defined $next;
         }
       }

@@ -700,6 +700,7 @@ rich_unknown_key_output="$(bash -c '
   _god_menu_rich_read_key
   printf "KEY:%s\\n" "$_god_menu_rich_key"
 ' _ "$project_dir")"
+rich_reader_dependency_output="$(LC_ALL=C grep -En 'Time::HiRes|Fcntl=' "$project_dir/bash_god/menu.sh" || true)"
 # A terminal can expose ESC before the rest of an arrow sequence on a busy
 # remote host. Feed the full sequence to the one reader after the old 60ms
 # window; it must still report down rather than leak literal "[B" to the
@@ -909,7 +910,8 @@ if contains "$rich_fallback_output" 'MATCHING OPERATIONS' && contains "$rich_fal
    not_contains "$rich_render_output" 'COMMAND' && not_contains "$rich_render_output" 'replace' && \
    contains "$rich_cursor_output" 'HIDESHOW' && contains "$rich_interrupt_output" 'INTERRUPT STATUS:130' && \
    not_contains "$rich_interrupt_output" 'INTERRUPT DID NOT BREAK KEY READ' && contains "$rich_key_output" 'KEY:down' && \
-   contains "$rich_unknown_key_output" 'KEY:unknown' && contains "$rich_delayed_tail_output" 'DELAYED KEY:down' && \
+   contains "$rich_unknown_key_output" 'KEY:unknown' && [ -z "$rich_reader_dependency_output" ] && \
+   contains "$rich_delayed_tail_output" 'DELAYED KEY:down' && \
    contains "$rich_rapid_arrow_output" 'RAPID:1|second command' && \
    contains "$rich_blocked_enter_output" 'BLOCKED ENTER:-1' && \
    contains "$rich_editor_output" 'READLINE|/resolved/kafka-consumer-groups.sh --list' && \

@@ -253,5 +253,6 @@ synthetic clients for discovery and execution-flow checks.
   come from verified native behavior, not intuition.
 - Discovery confirms a client and caches a version response. It does not validate the safety of a
   live target or execute a catalog command during rendering.
-- Rich execution needs Bash and a capable TTY. The static command view remains the correct fallback
+- Rich execution needs Bash, a capable TTY, and a bare Perl executable for terminal key reads; it
+  must not require optional Perl modules. The static command view remains the correct fallback
   for unresolved services, non-TTY output, and unsupported terminals.
