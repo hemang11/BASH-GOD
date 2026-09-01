@@ -11,6 +11,8 @@
 
 **Your DevOps command memory. Searchable, copy-ready native commands — with reviewed execution when a service supports it.**
 
+**Version 0.0.2.1**
+
 [![GitHub release](https://img.shields.io/github/v/release/hemang11/BASH-GOD?style=flat-square&label=release&color=f6c344)](https://github.com/hemang11/BASH-GOD/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-f6c344?style=flat-square)](LICENSE)
 [![Bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-f6c344?style=flat-square)](https://www.gnu.org/software/bash/)

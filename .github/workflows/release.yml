@@ -53,6 +53,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
+          release_title="BASH_GOD $VERSION"
+          if [ "$VERSION" = '0.0.2.1' ]; then
+            release_title="God Got Hands — BASH_GOD $VERSION"
+          fi
+
           gh release create "$GITHUB_REF_NAME" \
             "dist/bash-god-$VERSION.tar.gz" \
             "dist/bash-god-$VERSION.tar.gz.sha256" \
@@ -62,4 +67,4 @@ jobs:
             'dist/install.sh.sha256' \
             --verify-tag \
             --generate-notes \
-            --title "God Got Hands — BASH_GOD $VERSION"
+            --title "$release_title"

@@ -31,6 +31,14 @@ trap 'rm -rf -- "$smoke_home"' EXIT
 export HOME="$smoke_home"
 unset XDG_STATE_HOME XDG_CONFIG_HOME
 
+# The artwork and rich-picker assertions below intentionally verify UTF-8
+# rendering. GitHub's minimal runner shell can start without a locale, which
+# correctly makes the product choose its ASCII fallback but makes these
+# Unicode-specific assertions host-dependent. Keep the normal test locale
+# explicit; individual ASCII checks use LC_ALL=C below.
+unset LC_ALL LC_CTYPE
+export LANG='en_US.UTF-8'
+
 failures=0
 checks=0
 
@@ -400,6 +408,9 @@ fi
 # A resolved service gets one rich, title-first picker on an interactive
 # terminal. A redirected/no-TTY invocation must remain the old static table;
 # it must never suppress the rows and leave only a banner behind.
+# This block stubs TTY presence. Pair it with a capable TERM so CI's default
+# TERM=dumb does not correctly disable the exact picker being exercised.
+export TERM='xterm-256color'
 rich_fixture="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-rich.XXXXXX" 2>/dev/null)" || exit 1
 rich_bin="$rich_fixture/kafka/bin"
 mkdir -p "$rich_bin" "$rich_fixture/.local/state/bash-god"
@@ -627,12 +638,13 @@ rich_unknown_key_output="$(bash -c '
   _god_menu_rich_read_key
   printf "KEY:%s\\n" "$_god_menu_rich_key"
 ' _ "$project_dir" "$rich_key_input")"
-rich_rapid_arrow_input="$rich_fixture/rapid-arrow-input"
-printf '\033[B\033[B\n' > "$rich_rapid_arrow_input"
+# A regular file is not a raw terminal: Bash is allowed to buffer its queued
+# bytes before the Perl escape-tail reader sees them. Exercise the rapid
+# navigation loop with deterministic normalized keys instead; the key parser
+# itself is covered immediately above.
 rich_rapid_arrow_output="$(bash -c '
   . "$1/bash_god/menu.sh"
-  input_file=$2
-  _god_menu_open_tty() { exec 3<> "$input_file"; _god_menu_tty_fd=3; }
+  _god_menu_open_tty() { exec 3<>/dev/null; _god_menu_tty_fd=3; }
   _god_menu_close_tty() { exec 3<&-; exec 3>&-; _god_menu_tty_fd=""; }
   _god_menu_width() { printf "90\\n"; }
   _god_menu_rich_cursor_start() { _god_menu_rich_anchor=0; }
@@ -641,11 +653,18 @@ rich_rapid_arrow_output="$(bash -c '
   _god_menu_draw_rich_static() { :; }
   _god_menu_rich_render_current() { :; }
   _god_menu_rich_redraw_selection() { :; }
+  _god_menu_rich_read_key() {
+    key_reads=$(( ${key_reads:-0} + 1 ))
+    case "$key_reads" in
+      1|2) _god_menu_rich_key=down ;;
+      *) _god_menu_rich_key=enter ;;
+    esac
+  }
   rows=$'"'"'First\t\t\t1\nSecond\t\t\t1'"'"'
   details=$'"'"'first command\nsecond command'"'"'
   _god_menu_select_rich "$rows" "$details" 1 "" "KAFKA SEARCH RESULTS" "Smart search: consumers"
   printf "RAPID:%s|%s\\n" "$_god_menu_choice" "$_god_menu_edited_command"
-' _ "$project_dir" "$rich_rapid_arrow_input")"
+' _ "$project_dir")"
 rich_blocked_enter_output="$(bash -c '
   . "$1/bash_god/menu.sh"
   _god_menu_open_tty() { exec 3<>/dev/null; _god_menu_tty_fd=3; }
