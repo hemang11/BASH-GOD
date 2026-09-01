@@ -37,7 +37,6 @@ _god_menu_style_init() {
       _god_menu_keys='↑/↓ or j/k to move · 1-9 to jump · enter to confirm · esc to cancel'
       _god_menu_keys_rich='↑/↓ move · e edit · enter run · esc cancel'
       _god_menu_keys_rich_unavailable='↑/↓ move · unavailable for detected version · esc cancel'
-      _god_menu_keys_rich_copy_only='↑/↓ move · copy-only command · esc cancel'
       ;;
     *)
       _god_menu_top_left='+'
@@ -50,7 +49,6 @@ _god_menu_style_init() {
       _god_menu_keys='up/down or j/k to move, 1-9 to jump, enter to confirm, esc to cancel'
       _god_menu_keys_rich='up/down move, e edit, enter run, esc cancel'
       _god_menu_keys_rich_unavailable='up/down move, unavailable for detected version, esc cancel'
-      _god_menu_keys_rich_copy_only='up/down move, copy-only command, esc cancel'
       ;;
   esac
 
@@ -647,25 +645,20 @@ _god_menu_draw_rich_static() {
 }
 
 _god_menu_draw_rich_detail() {
-  local rows selected detail width capacity display_mode reason_capacity label compatibility runnable reason command_width keys_width line index
-  local status_width status_label_width label_width keys reason_index
+  local rows selected detail width capacity display_mode label compatibility runnable command_width keys_width line index
+  local status_width status_label_width label_width keys
 
   rows=$1
   selected=$2
   detail=$3
   width=$4
   capacity=$5
-  # Keep the original optional display-mode slot.  Rich picker callers added
-  # it before copy-only rows existed (for example: "view"), so the new
-  # reserved reason height belongs after it rather than changing its meaning.
-  # This is deliberately unused today, but retaining it keeps direct callers
-  # and sourced integrations positional-safe.
+  # Retain the historic display-mode slot for sourced callers without adding a
+  # second variable-height detail section below the command.
   display_mode=${6:-view}
-  reason_capacity=${7:-0}
   label="$(_god_menu_field "$rows" "$selected" 1)"
   compatibility="$(_god_menu_field "$rows" "$selected" 2)"
   runnable="$(_god_menu_field "$rows" "$selected" 4)"
-  reason="$(_god_menu_field "$rows" "$selected" 5)"
   command_width=$((width - 6))
   keys_width=$((width - 4))
 
@@ -693,27 +686,8 @@ _god_menu_draw_rich_detail() {
     fi
     index=$((index + 1))
   done < <(_god_menu_wrap "$detail" "$command_width" "$capacity")
-  if [ "$reason_capacity" -gt 0 ]; then
-    reason_index=1
-    while IFS= read -r line; do
-      if [ -n "$reason" ] && [ "$reason_index" -eq 1 ]; then
-        printf '\r%s  %sCopy only — %s%s\n' \
-          "$_god_menu_rich_el" "$_god_menu_dim" "$line" "$_god_menu_reset" >&3
-      elif [ -n "$reason" ]; then
-        printf '\r%s    %s%s%s\n' \
-          "$_god_menu_rich_el" "$_god_menu_dim" "$line" "$_god_menu_reset" >&3
-      else
-        printf '\r%s\n' "$_god_menu_rich_el" >&3
-      fi
-      reason_index=$((reason_index + 1))
-    done < <(_god_menu_wrap "$reason" "$command_width" "$reason_capacity")
-  fi
   if [ "$runnable" = 0 ]; then
-    if [ -n "$reason" ]; then
-      keys=$_god_menu_keys_rich_copy_only
-    else
-      keys=$_god_menu_keys_rich_unavailable
-    fi
+    keys=$_god_menu_keys_rich_unavailable
   else
     keys=$_god_menu_keys_rich
   fi
@@ -725,17 +699,11 @@ _god_menu_draw_rich_detail() {
 # never shrinks during a session; that makes every cursor movement deterministic
 # even when a newly selected command wraps to more lines than the last one.
 _god_menu_rich_render_current() {
-  local detail_lines reason_lines reason
+  local detail_lines
 
   detail_lines="$(_god_menu_detail_line_count "$_god_menu_rich_detail" "$_god_menu_rich_command_width")"
   if [ "$detail_lines" -gt "$_god_menu_rich_capacity" ]; then
     _god_menu_rich_capacity=$detail_lines
-  fi
-  reason="$(_god_menu_field "$_god_menu_rich_rows" "$_god_menu_rich_selected" 5)"
-  reason_lines=0
-  [ -z "$reason" ] || reason_lines="$(_god_menu_detail_line_count "$reason" "$_god_menu_rich_command_width")"
-  if [ "$reason_lines" -gt "${_god_menu_rich_reason_capacity:-0}" ]; then
-    _god_menu_rich_reason_capacity=$reason_lines
   fi
   if [ "${_god_menu_rich_anchor:-0}" = 1 ]; then
     _god_menu_rich_restore_anchor
@@ -743,8 +711,8 @@ _god_menu_rich_render_current() {
   fi
   _god_menu_draw_rich_detail \
     "$_god_menu_rich_rows" "$_god_menu_rich_selected" "$_god_menu_rich_detail" \
-    "$_god_menu_rich_width" "$_god_menu_rich_capacity" view "${_god_menu_rich_reason_capacity:-0}"
-  _god_menu_rich_dynamic_lines=$((_god_menu_rich_capacity + ${_god_menu_rich_reason_capacity:-0} + 2))
+    "$_god_menu_rich_width" "$_god_menu_rich_capacity" view
+  _god_menu_rich_dynamic_lines=$((_god_menu_rich_capacity + 2))
   _god_menu_rich_save_anchor
 }
 
@@ -950,7 +918,9 @@ with open(result, "w", encoding="utf-8") as handle:
 
 # _god_menu_select_rich ROWS DETAILS [SELECTED] [DETAIL_PROVIDER] [HEADER_TITLE] [HEADER_SUBTITLE] [DETAIL_CACHED]
 #
-# ROWS is LABEL<TAB>[COMPATIBILITY]<TAB>[RISK]<TAB>RUNNABLE(0/1)<TAB>[REASON];
+# ROWS is LABEL<TAB>[COMPATIBILITY]<TAB>[RISK]<TAB>RUNNABLE(0/1). RUNNABLE is
+# zero only for a per-command compatibility or missing-tool block; catalogs do
+# not define a separate non-executable state.
 # DETAILS is newline-delimited, line N holding the full command preview for row N.
 # DETAIL_PROVIDER is an optional function that receives the 1-based selected
 # row and sets _god_menu_provider_detail. It lets a caller lazily produce a
@@ -1027,7 +997,6 @@ _god_menu_select_rich() {
   fi
   _god_menu_rich_detail=$current_detail
   _god_menu_rich_capacity="$(_god_menu_detail_line_count "$_god_menu_rich_detail" "$_god_menu_rich_command_width")"
-  _god_menu_rich_reason_capacity=0
   _god_menu_rich_dynamic_lines=0
   _god_menu_draw_rich_static "$rows" "$visible" "$selected" "$width" "$header_title" "$header_subtitle"
   _god_menu_rich_render_current

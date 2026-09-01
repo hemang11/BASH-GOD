@@ -309,12 +309,11 @@ special-case dispatcher branch.
 | `@since <version>` | Every record in a catalog with `@discover` | Dotted compatibility floor. The picker blocks that record below it once a version is detected. Use `0.0` for service-neutral `LOCAL` rows. |
 | `@until <version>` | Optional | Dotted version the record is known to still work through. Hides the record above it once a version is detected. |
 | `@intent <slug>` | Optional | Lowercase kebab-case link across same-purpose records; the newest in-range one shows, others collapse into it. |
-| `@runnable NO` | Optional | Keeps a record copy-only. Requires a concise `@notes` reason and blocks picker edit/run. |
 | `@description` | Per record | What the command does, in plain language. |
 | `@run` | Per record | Exactly one physical line containing the copy-ready native command. |
 | `@params` | Optional | Required or already-present arguments as `NAME | EXAMPLE | MEANING`. |
 | `@optional` | Optional | Useful additions as `NAME | EXAMPLE | MEANING`. |
-| `@notes` | Optional | A concise compatibility, safety, or interpretation note. Required as the reason for `@runnable NO`. |
+| `@notes` | Optional | A concise compatibility, safety, or interpretation note. |
 | `@end` | Per record | Closes the command record. |
 
 Accepted modes are:
@@ -328,7 +327,7 @@ Modes remain searchable metadata. The terminal keeps normal modes quiet and visi
 `LEGACY-ZK` as `[LEGACY]`. `LOCAL` also exempts a record from path resolution and version filtering.
 Do not invent another mode without updating validation, rendering, tests, and this guide together.
 
-## Execution Metadata (`@discover`, `@execution PATH`, `@runnable NO`, `@synced`, `@since`, `@until`, `@intent`)
+## Execution Metadata (`@discover`, `@execution PATH`, `@synced`, `@since`, `@until`, `@intent`)
 
 These directives make a service executable rather than display-only. `@discover` is for one installed
 tool family; `@execution PATH` is for an intentional collection of host tools. Both use the same
@@ -348,11 +347,17 @@ version | kafka-topics.sh --version | Prints the installed version
 @synced 3.9
 ```
 
-- `probe` is a bare file name, never a path — it is looked up inside a resolved directory.
+- `probe` is a bare file name, never a path — it is looked up inside a resolved directory. It may
+  appear more than once in priority order only when the names are interchangeable clients for the
+  same catalog; the selected member is cached and the generic resolver uses that exact member for
+  every rich-preview rewrite.
 - `root` and `scan` are absolute paths. `root` is checked first, then `PATH`, then a bounded scan
   under `scan`.
 - `version` is a command line run inside the resolved directory; its output's first dotted-numeric
-  token becomes the detected version, or `unknown` when none is found.
+  token becomes the detected service version, or `unknown` when none is found. Start it with
+  `<probe>` when it must use the selected probe-family member. It may query the service through that
+  client (for example, Elasticsearch through curl); cache the service version, not the helper
+  client's version.
 - `@synced <version>` is service-level and records what the catalog was last verified against. It
   only ever produces a caution line — it never hides a record. Do not use it as a stand-in for
   `@until` on individual records.
@@ -362,10 +367,10 @@ version | kafka-topics.sh --version | Prints the installed version
 spelling is executed through the caller's normal PATH. `@discover` and `@execution PATH` are mutually
 exclusive. A catalog with neither marker stays display-only.
 
-`@runnable NO` belongs inside a command record. Use it for raw in-tool snippets or shell-state changes
-that cannot usefully run in BASH_GOD's child process. It requires a non-empty `@notes` explanation;
-the picker keeps the row searchable and copyable, shows that explanation when selected, and blocks
-both `e` and Enter. `execute.sh` refuses it again as defense in depth.
+Every record in an executable catalog must be a real command that can run in BASH_GOD's child process.
+Express raw client code through the client's command-line form (for example, a MongoDB shell
+`--eval` command), and express useful shell-state checks as a one-command operation. Do not add a
+non-executable record marker: service resolution decides whether the rich picker is available.
 
 Per-command `@since <version>` and `@until <version>` state the range a record is known to be valid
 for. Every record in a catalog with `@discover` must declare `@since`; the validator rejects the
@@ -459,9 +464,7 @@ command under `@optional`.
 ### Notes
 
 Use notes only for information that changes safe or correct use, such as version differences, file
-sensitivity, prerequisites, or interpretation of output. Do not restate the description. For a
-copy-only record, the note is the selected picker panel's explanation, so write it as the direct
-reason that edit/run is unavailable.
+sensitivity, prerequisites, or interpretation of output. Do not restate the description.
 
 ## Native Help Knowledge
 

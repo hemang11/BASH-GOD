@@ -773,6 +773,36 @@ _god_search_rich_detail_cached() {
   [ -n "${models[$storage_index]:-}" ]
 }
 
+# _god_search_discovered_tool_missing EXECUTION_PATH RUN DISCOVER_PROBES SELECTED_TOOL
+#
+# A catalog may declare several interchangeable discovery tools, such as a
+# modern client and an explicitly supported legacy fallback. Only a command
+# whose first word is one of those declared tools is tied to the resolved
+# directory. The discovered member is the family runner for every such row,
+# so a modern spelling can safely use the catalog-declared legacy fallback.
+# Return the missing selected runner only when the cache/path is inconsistent.
+_god_search_discovered_tool_missing() {
+  local execution_path run discover_probes selected_tool first probe
+
+  execution_path=$1
+  run=$2
+  discover_probes=$3
+  selected_tool=${4:-}
+  [ -n "$execution_path" ] || return 1
+  first="${run#"${run%%[![:space:]]*}"}"
+  first="${first%%[[:space:]]*}"
+  [ -n "$first" ] || return 1
+
+  while IFS= read -r probe; do
+    [ -n "$probe" ] || continue
+    [ "$first" = "$probe" ] || continue
+    [ -n "$selected_tool" ] || selected_tool=$probe
+    [ -x "$execution_path/$selected_tool" ] || { printf '%s\n' "$selected_tool"; return 0; }
+    return 1
+  done <<< "$discover_probes"
+  return 1
+}
+
 # _god_search_offer_execution_rich SORTED_RESULTS TAB QUERY [HEADER_TITLE] [HEADER_SUBTITLE]
 #
 # The caller has already established that every result has a fresh resolved
@@ -782,8 +812,8 @@ _god_search_rich_detail_cached() {
 # compact list or legacy command picker underneath it.
 _god_search_offer_execution_rich() {
   local sorted_results tab query header_title header_subtitle menu_rows picker_status row_fields separator
-  local line svc grp ent title risk native_run mode remaining_run native_tool compatibility_kind compatibility_label runnable declared_runnable disabled_reason notes display original service catalog execution_path execution_mode
-  local previous_service previous_catalog previous_execution_path previous_execution_mode
+  local line svc grp ent title risk native_run mode remaining_run native_tool missing_probe compatibility_kind compatibility_label runnable display original service catalog execution_path execution_mode
+  local previous_service previous_catalog previous_execution_path previous_execution_mode previous_discover_probes previous_discover_tool
   local model model_tag model_value template pending selected_index storage_index row_index initial_selected first_row_runnable
   local -a values models rich_services rich_groups rich_entries rich_catalogs rich_execution_paths rich_risks
 
@@ -811,6 +841,8 @@ _god_search_offer_execution_rich() {
   previous_catalog=''
   previous_execution_path=''
   previous_execution_mode=''
+  previous_discover_probes=''
+  previous_discover_tool=''
   row_index=0
   initial_selected=1
   while IFS= read -r line; do
@@ -823,8 +855,17 @@ _god_search_offer_execution_rich() {
       previous_catalog="$(_god_catalog_for "$svc" 2>/dev/null)" || return 1
       previous_execution_mode="$(_god_catalog_execution_mode "$previous_catalog")"
       case "$previous_execution_mode" in
-        DISCOVER) previous_execution_path="$(_god_discover_path "$svc" 2>/dev/null)" ;;
-        PATH) previous_execution_path='' ;;
+        DISCOVER)
+          previous_execution_path="$(_god_discover_path "$svc" 2>/dev/null)"
+          previous_discover_probes="$(_god_catalog_discover_probes "$previous_catalog")"
+          previous_discover_tool="$(_god_discover_tool "$svc" 2>/dev/null)"
+          [ -n "$previous_discover_tool" ] || previous_discover_tool="$(_god_catalog_discover_value "$previous_catalog" probe)"
+          ;;
+        PATH)
+          previous_execution_path=''
+          previous_discover_probes=''
+          previous_discover_tool=''
+          ;;
         *) return 1 ;;
       esac
       previous_service=$svc
@@ -837,35 +878,25 @@ _god_search_offer_execution_rich() {
     # once before the picker starts; navigation remains filesystem-free. PATH
     # services intentionally skip this because no one directory owns them.
     if [ "$previous_execution_mode" = DISCOVER ] && [ "$mode" != LOCAL ] && [ "$compatibility_kind" != blocked ]; then
-      remaining_run=$native_run
-      while [[ "$remaining_run" =~ (^|[[:space:]\|\;\&\(])\.\/([A-Za-z0-9._-]+) ]]; do
-        native_tool=${BASH_REMATCH[2]}
-        if [ ! -x "$previous_execution_path/$native_tool" ]; then
-          compatibility_kind=blocked
-          compatibility_label="$native_tool is not installed"
-          break
-        fi
-        remaining_run=${remaining_run#*"./$native_tool"}
-      done
+      missing_probe="$(_god_search_discovered_tool_missing "$previous_execution_path" "$native_run" "$previous_discover_probes" "$previous_discover_tool")" || missing_probe=''
+      if [ -n "$missing_probe" ]; then
+        compatibility_kind=blocked
+        compatibility_label="$missing_probe is not installed"
+      else
+        remaining_run=$native_run
+        while [[ "$remaining_run" =~ (^|[[:space:]\|\;\&\(])\.\/([A-Za-z0-9._-]+) ]]; do
+          native_tool=${BASH_REMATCH[2]}
+          if [ ! -x "$previous_execution_path/$native_tool" ]; then
+            compatibility_kind=blocked
+            compatibility_label="$native_tool is not installed"
+            break
+          fi
+          remaining_run=${remaining_run#*"./$native_tool"}
+        done
+      fi
     fi
 
-    declared_runnable=1
-    notes=''
-    while IFS="$tab" read -r model_tag model_value; do
-      case "$model_tag" in
-        RUNNABLE) declared_runnable=$model_value ;;
-        NOTES) notes=$model_value ;;
-      esac
-    done < <(_god_catalog_command_export "$previous_catalog" "$grp" "$ent")
-
-    runnable=$declared_runnable
-    disabled_reason=''
-    if [ "$declared_runnable" != 1 ]; then
-      disabled_reason=$notes
-      # Keep a short row-level signal beside the title. The full maintainer
-      # explanation remains visible in the selected command panel.
-      [ -n "$compatibility_label" ] || compatibility_label='copy only'
-    fi
+    runnable=1
     [ "$compatibility_kind" = blocked ] && runnable=0
 
     row_index=$((row_index + 1))
@@ -876,7 +907,7 @@ _god_search_offer_execution_rich() {
       [ "$first_row_runnable" = 1 ] || initial_selected=$row_index
     fi
     menu_rows="${menu_rows:+$menu_rows
-}$(printf '%s\t%s\t%s\t%s\t%s' "$title" "$compatibility_label" "$risk" "$runnable" "$disabled_reason")"
+}$(printf '%s\t%s\t%s\t%s\t%s' "$title" "$compatibility_label" "$risk" "$runnable" '')"
     rich_services+=("$svc")
     rich_groups+=("$grp")
     rich_entries+=("$ent")

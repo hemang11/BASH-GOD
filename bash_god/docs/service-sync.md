@@ -5,10 +5,12 @@ update-check machinery: when a new BASH_GOD release lands with updated catalog d
 interactive `god` offers it the same way it always has. There is no separate
 "catalog sync" release channel.
 
-It applies to a discovery-based service whose catalog declares `@discover` — Kafka, Kubernetes,
-AWS, and MongoDB today. A service that declares `@execution PATH` deliberately has no product
-version axis; do not invent one from curl, ssh, or another host utility. A catalog with neither
-marker stays display-only and needs no execution bookkeeping.
+It applies to a discovery-based service whose catalog declares `@discover` — Elasticsearch, Kafka,
+Kubernetes, AWS, and MongoDB today. Elasticsearch is the useful exception where the declared curl
+probe discovers the client while its catalog-declared version request reads the service's root
+endpoint; cache the Elasticsearch version, never curl's version. A service that declares
+`@execution PATH` deliberately has no product version axis. A catalog with neither marker stays
+display-only and needs no execution bookkeeping.
 
 ## When a major (or otherwise breaking) native release lands
 
@@ -31,8 +33,9 @@ marker stays display-only and needs no execution bookkeeping.
 
 3. **Add the new variant as a normal catalog record** — same `@group`, same field requirements
    (`@mode`, mandatory `@since`, `@description`, one physical `@run` line) as any other record.
-   If a record is a shell-state operation or a raw in-tool snippet rather than an OS command, mark
-   it `@runnable NO` and give it a concise `@notes` explanation instead of fabricating a wrapper.
+   Every executable-catalog row must be a real command. Express raw in-tool work through the native
+   client (for example, its `--eval` mode), and replace child-shell-only operations with a useful
+   one-command check.
 
 4. **Bump `@synced <version>`** at the top of the catalog to the version you verified this pass
    against. This is the only field this whole runbook exists to keep current. It is a caution line

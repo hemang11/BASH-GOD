@@ -218,13 +218,10 @@ Rules:
   known to support. In discovery catalogs `@since` is mandatory. Search keeps an out-of-range row
   visible with its reason but disables execution and editing. Optional `@intent SLUG` links
   same-purpose records across versions so the preferred in-range form is identified.
-- `@runnable NO` keeps one record copy-only. It requires a non-empty `@notes` explanation and blocks
-  picker edit/run while retaining a searchable, copy-ready command.
 - `@params` and `@optional` rows use `NAME | EXAMPLE | MEANING`.
 - `@risk WRITE`, `@risk WARN`, and `@risk DELETE` distinguish normal writes, high-impact non-delete
   operations, and removals.
-- `@notes` is optional. It is required for `@runnable NO`, where the selected picker panel shows it
-  as the copy-only explanation.
+- `@notes` is optional and records a material compatibility, safety, or interpretation detail.
 - `@end` closes each command record.
 - Group names and command titles are unique within their scopes, ignoring case.
 
@@ -363,13 +360,14 @@ view key, on a TTY, offers to run a result:
    screen. Arrow keys repaint only the changed rows and panel; `e` opens a normal line editor seeded
    with the complete command, Enter runs the reviewed command, and Escape cancels promptly.
 3. **Resolve and execute** (`bash_god/resolve.sh`, `bash_god/execute.sh`) safely prepare each selected
-   command. A discovered catalog may rewrite only its declared leading probe to the resolved absolute
-   path; static catalog text remains copyable. `@params` become positional argument slots, including
+   command. A discovered catalog may rewrite a declared leading client spelling to its cached,
+   catalog-declared probe-family member at the resolved absolute path; static catalog text remains
+   copyable. `@params` become positional argument slots, including
    values embedded inside quoted URLs or JSON, so query/config/prompt values never become shell syntax.
    Any remaining placeholder is prompted only after selection in the same terminal flow. Native stdout
-   and stderr stream directly to the terminal, and child exit status and Ctrl-C are preserved. A
-   `@runnable NO` row or a shell-state operation (`cd`, `export`, `unset`, `source`) remains copy-only
-   and cannot be edited or launched.
+   and stderr stream directly to the terminal, and child exit status and Ctrl-C are preserved. An
+   executable catalog contains only child-process-safe commands; a shell-state operation
+   (`cd`, `export`, `unset`, `source`) is rejected as a defense in depth.
 
 No terminal, no execution: all non-search views remain inert, copy-ready renderers.
 
@@ -476,7 +474,7 @@ metadata current as its native tool changes.
 - Renderers use fixed widths rather than detecting terminal width.
 - The pre-rendered logo uses Unicode block characters; `--quiet` provides a decoration-free view for
   terminals where those glyphs are undesirable.
-- A catalog with neither `@discover` nor `@execution PATH` remains copy-only. Across executable
+- A catalog with neither `@discover` nor `@execution PATH` remains display-only. Across executable
   catalogs, resolve.sh binds a value only when the query names that slot's keyword unambiguously;
   anything less certain stays a placeholder to fill in by hand.
 - Warnings cannot prevent an operator from running a risky command; the risk label remains visible

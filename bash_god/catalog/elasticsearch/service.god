@@ -1,16 +1,23 @@
 @title Elasticsearch commands
 
 @description
-Curated Elasticsearch host checks and read-only REST API operations. A plain interactive search
-lets an operator review, edit, and explicitly run a selected command through tools on PATH.
+Curated Elasticsearch host checks and read-only REST API operations. During resync, BASH_GOD
+resolves the curl client used by these commands and reads the local root endpoint's Elasticsearch
+version when it is reachable. A plain interactive search then lets an operator review, edit, and
+explicitly run a selected command through the shared execution flow.
 
-@execution PATH
+@discover
+probe | curl | HTTP client used by the catalog's Elasticsearch REST commands
+root | /usr/bin | System curl location on common macOS and Linux installations
+scan | /usr | Bounded fallback for a system curl outside the standard bin directory
+version | <probe> -fsS --connect-timeout 1 --max-time 2 http://localhost:9200/ | Reads the local Elasticsearch root endpoint version without changing state
 
 
 @group service
 
 @command Check the Elasticsearch HTTP endpoint
 @mode MODERN
+@since 7.0
 @description
 Returns the cluster name, node name, and Elasticsearch version when the local HTTP endpoint responds.
 @run
@@ -21,6 +28,7 @@ URL | http://localhost:9200/ | Elasticsearch HTTP endpoint; replace the host or 
 
 @command Check the Elasticsearch systemd service
 @mode LOCAL
+@since 0.0
 @description
 Shows whether the local Elasticsearch systemd unit is active and includes recent status lines.
 @run
@@ -31,6 +39,7 @@ elasticsearch | service name | Default Elasticsearch package service unit
 
 @command Find the Elasticsearch process
 @mode LOCAL
+@since 0.0
 @description
 Lists matching Elasticsearch processes with their full command lines.
 @run
@@ -39,6 +48,7 @@ pgrep -af elasticsearch
 
 @command Check which process listens on port 9200
 @mode LOCAL
+@since 0.0
 @description
 Shows the process currently accepting Elasticsearch HTTP connections on the default port.
 @run
@@ -49,6 +59,7 @@ lsof -nP -iTCP:9200 -sTCP:LISTEN
 
 @command Show recent Elasticsearch service logs
 @mode LOCAL
+@since 0.0
 @description
 Displays the latest one hundred journal entries for the local Elasticsearch service.
 @run
@@ -59,6 +70,7 @@ journalctl -u elasticsearch -n 100 --no-pager
 
 @command Show the packaged Elasticsearch configuration
 @mode LOCAL
+@since 0.0
 @description
 Displays the common package-install location for elasticsearch.yml.
 @run
@@ -72,6 +84,7 @@ Archive and custom installations may keep elasticsearch.yml under a different co
 
 @command Show cluster health
 @mode MODERN
+@since 7.0
 @description
 Shows green, yellow, or red health plus shard and node counts.
 @run
@@ -82,6 +95,7 @@ _cluster/health | API path | Cluster-wide health summary
 
 @command Show a compact cluster health row
 @mode MODERN
+@since 7.0
 @description
 Prints a human-readable one-line health summary through the CAT API.
 @run
@@ -92,6 +106,7 @@ v=true | query option | Include column headings
 
 @command List cluster nodes and resource pressure
 @mode MODERN
+@since 7.0
 @description
 Shows node roles, elected master, heap, memory, CPU, load, and node name.
 @run
@@ -102,6 +117,7 @@ h | selected columns | Limits output to the most useful node-health fields
 
 @command Show cluster-wide statistics
 @mode MODERN
+@since 7.0
 @description
 Returns aggregate node, index, shard, storage, JVM, and operating-system statistics.
 @run
@@ -113,6 +129,7 @@ curl -sS 'http://localhost:9200/_cluster/stats?pretty'
 
 @command List indices
 @mode MODERN
+@since 7.0
 @description
 Shows index health, status, shard counts, document counts, and storage size.
 @run
@@ -123,6 +140,7 @@ s=index | sort option | Sort rows alphabetically by index name
 
 @command Find the largest indices
 @mode MODERN
+@since 7.0
 @description
 Sorts indices by total store size so the largest indices appear first.
 @run
@@ -133,6 +151,7 @@ s=store.size:desc | sort option | Sort descending by primary-plus-replica storag
 
 @command Describe one index
 @mode MODERN
+@since 7.0
 @description
 Shows health, shard counts, document counts, and storage for one index or index pattern.
 @run
@@ -143,6 +162,7 @@ curl -sS 'http://localhost:9200/_cat/indices/<index_name>?v=true'
 
 @command List aliases
 @mode MODERN
+@since 7.0
 @description
 Shows aliases and the indices to which they currently point.
 @run
@@ -151,6 +171,7 @@ curl -sS 'http://localhost:9200/_cat/aliases?v=true&s=alias,index'
 
 @command Show an index mapping
 @mode MODERN
+@since 7.0
 @description
 Displays field types and mapping options for one index.
 @run
@@ -161,6 +182,7 @@ curl -sS 'http://localhost:9200/<index_name>/_mapping?pretty'
 
 @command Show index settings
 @mode MODERN
+@since 7.0
 @description
 Displays shard, replica, refresh, analysis, and other settings for one index.
 @run
@@ -174,6 +196,7 @@ curl -sS 'http://localhost:9200/<index_name>/_settings?pretty'
 
 @command List all shards
 @mode MODERN
+@since 7.0
 @description
 Shows every primary and replica shard, its state, size, node, and allocation.
 @run
@@ -182,6 +205,7 @@ curl -sS 'http://localhost:9200/_cat/shards?v=true&s=index,shard,prirep'
 
 @command Find unassigned shards
 @mode MODERN
+@since 7.0
 @description
 Filters the shard table to rows that are currently unassigned.
 @run
@@ -192,6 +216,7 @@ state | UNASSIGNED | Shard state selected by the local output filter
 
 @command Explain an unassigned shard
 @mode MODERN
+@since 7.0
 @description
 Asks Elasticsearch to explain why one currently unassigned shard cannot be allocated.
 @run
@@ -202,6 +227,7 @@ With no request body, Elasticsearch selects the first unassigned shard it finds.
 
 @command Show shard allocation and free disk
 @mode MODERN
+@since 7.0
 @description
 Shows shard counts and disk usage for each data node.
 @run
@@ -210,6 +236,7 @@ curl -sS 'http://localhost:9200/_cat/allocation?v=true&s=disk.percent:desc'
 
 @command Show shard recovery progress
 @mode MODERN
+@since 7.0
 @description
 Shows active and recently completed shard recoveries with stage and percentage progress.
 @run
@@ -223,6 +250,7 @@ active_only=true | query option | Limit the table to recoveries still in progres
 
 @command Read a small sample of documents
 @mode MODERN
+@since 7.0
 @description
 Returns at most ten documents from one index without changing them.
 @run
@@ -234,6 +262,7 @@ size | 10 | Maximum number of hits returned
 
 @command Search one field for a value
 @mode MODERN
+@since 7.0
 @description
 Runs a match query against one field and returns up to ten matching documents.
 @run
@@ -246,6 +275,7 @@ size | 10 | Maximum number of hits returned
 
 @command Count documents in an index
 @mode MODERN
+@since 7.0
 @description
 Returns the logical document count for one index or alias.
 @run
@@ -256,6 +286,7 @@ curl -sS 'http://localhost:9200/<index_name>/_count?pretty'
 
 @command Get one document by ID
 @mode MODERN
+@since 7.0
 @description
 Retrieves one document directly when both its index and identifier are known.
 @run
@@ -270,6 +301,7 @@ curl -sS 'http://localhost:9200/<index_name>/_doc/<document_id>?pretty'
 
 @command Show node JVM and filesystem statistics
 @mode MODERN
+@since 7.0
 @description
 Returns per-node JVM heap, garbage-collection, process, and filesystem metrics.
 @run
@@ -280,6 +312,7 @@ jvm,process,fs | metrics | Restrict the large node-stats response to core runtim
 
 @command Show hot threads
 @mode MODERN
+@since 7.0
 @description
 Captures stack traces from the busiest Elasticsearch threads for CPU troubleshooting.
 @run
@@ -288,6 +321,7 @@ curl -sS 'http://localhost:9200/_nodes/hot_threads'
 
 @command List running cluster tasks
 @mode MODERN
+@since 7.0
 @description
 Shows long-running searches, reindex jobs, recoveries, and other active tasks.
 @run
@@ -296,6 +330,7 @@ curl -sS 'http://localhost:9200/_cat/tasks?v=true&s=running_time:desc'
 
 @command List pending cluster-state tasks
 @mode MODERN
+@since 7.0
 @description
 Shows cluster-level changes waiting for the elected master to process them.
 @run
@@ -307,6 +342,7 @@ curl -sS 'http://localhost:9200/_cat/pending_tasks?v=true'
 
 @command List available CAT API routes
 @mode MODERN
+@since 7.0
 @description
 Displays the human-oriented CAT endpoints exposed by the connected Elasticsearch version.
 @run
@@ -315,6 +351,7 @@ curl -sS 'http://localhost:9200/_cat'
 
 @command Show columns supported by a CAT endpoint
 @mode MODERN
+@since 7.0
 @description
 Displays every column name and description supported by one CAT endpoint.
 @run
@@ -325,6 +362,7 @@ curl -sS 'http://localhost:9200/_cat/<cat_endpoint>?help=true'
 
 @command Show native curl help
 @mode LOCAL
+@since 0.0
 @description
 Displays the locally installed curl options used to call Elasticsearch REST APIs.
 @run

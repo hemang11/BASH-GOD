@@ -133,7 +133,14 @@ _god_validate_catalog() {
       }
 
       if (key == "probe") {
-        if (discover_probe++) fail("@discover has a duplicate probe row")
+        # Probe rows are an ordered tool family. The first available tool wins,
+        # which lets one catalog explicitly support a legacy CLI without any
+        # service-name branch in discovery.
+        if (seen_discover_probe[value]++) {
+          fail("@discover has a duplicate probe \"" value "\"")
+        } else {
+          discover_probe_count++
+        }
         # The probe is looked up inside a resolved directory, so a path here
         # would silently escape that directory.
         if (value !~ /^[A-Za-z0-9._-]+$/) fail("@discover probe \"" value "\" must be a bare file name")
@@ -147,7 +154,9 @@ _god_validate_catalog() {
         if (discover_version++) fail("@discover has a duplicate version row")
         head = value
         sub(/[[:space:]].*$/, "", head)
-        if (head !~ /^[A-Za-z0-9._-]+$/) fail("@discover version must start with a bare file name found in the resolved directory")
+        if (head != "<probe>" && head !~ /^[A-Za-z0-9._-]+$/) {
+          fail("@discover version must start with a bare file name or <probe>")
+        }
       }
     }
 
@@ -252,7 +261,6 @@ _god_validate_catalog() {
       has_since = 0
       has_until = 0
       has_intent = 0
-      has_runnable = 0
       since_value = ""
       until_value = ""
       description_has_content = 0
@@ -313,16 +321,6 @@ _god_validate_catalog() {
       next
     }
 
-    in_command && /^@runnable([[:space:]]|$)/ {
-      if (has_runnable) fail("command \"" command_name "\" has duplicate @runnable")
-      runnable = $0
-      sub(/^@runnable[[:space:]]*/, "", runnable)
-      if (runnable != "NO") fail("command \"" command_name "\" has invalid @runnable; expected NO")
-      has_runnable = 1
-      field = ""
-      next
-    }
-
     in_command && $0 == "@description" {
       if (has_description) fail("command \"" command_name "\" has duplicate @description")
       has_description = 1
@@ -368,11 +366,6 @@ _god_validate_catalog() {
       if (!has_mode) fail("command \"" command_name "\" has no @mode")
       if (seen_discover && !has_since) {
         fail("command \"" command_name "\" has no @since; every command in an executable catalog must declare its compatibility floor")
-      }
-      if (has_runnable && !has_notes) {
-        fail("command \"" command_name "\" has @runnable NO but no @notes explaining why it is copy-only")
-      } else if (has_runnable && !notes_has_content) {
-        fail("command \"" command_name "\" has @runnable NO but an empty @notes explanation")
       }
       if (!has_run) fail("command \"" command_name "\" has no @run")
       else if (!run_has_content) fail("command \"" command_name "\" has an empty @run")
@@ -424,7 +417,7 @@ _god_validate_catalog() {
       if (!seen_title) fail("missing @title")
       if (!seen_catalog_description) fail("missing catalog @description")
       else if (!catalog_description_has_content) fail("empty catalog @description")
-      if (seen_discover && !discover_probe) fail("@discover has no probe row")
+      if (seen_discover && !discover_probe_count) fail("@discover has no probe row")
       if (seen_discover && !discover_root) fail("@discover has no root row")
       if (previous_group != "" && group_command_count == 0) fail("group \"" previous_group "\" has no commands")
       if (command_count == 0) fail("no command blocks found")
@@ -503,8 +496,9 @@ _god_catalog_has_execution() {
 
 # _god_catalog_discover_value FILE KEY
 #
-# KEY is one of probe, root, scan, version. Prints the VALUE column of the
-# matching row inside the @discover block, or nothing when absent.
+# KEY is one of probe, root, scan, version. Prints the first matching VALUE
+# column inside the @discover block, or nothing when absent. Use
+# _god_catalog_discover_probes when a catalog declares an ordered probe family.
 _god_catalog_discover_value() {
   LC_ALL=C awk -v want="$2" '
     /^@discover$/ { in_block = 1; next }
@@ -527,6 +521,29 @@ _god_catalog_discover_value() {
   ' "$1"
 }
 
+# _god_catalog_discover_probes FILE
+#
+# Prints each catalog-declared probe in declaration order. Most catalogs have
+# one; a catalog can declare a primary modern tool and one or more legacy
+# fallbacks. The discovery engine owns selection so no service name is ever
+# special-cased.
+_god_catalog_discover_probes() {
+  LC_ALL=C awk '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+
+    /^@discover$/ { in_block = 1; next }
+    in_block && /^@/ { in_block = 0 }
+    in_block && /[^[:space:]]/ {
+      count = split($0, parts, /\|/)
+      if (count == 3 && trim(parts[1]) == "probe") print trim(parts[2])
+    }
+  ' "$1"
+}
+
 # _god_catalog_command_export FILE GROUP ENTRY_INDEX
 #
 # Structured, machine-readable dump of one command record: the fields
@@ -538,7 +555,9 @@ _god_catalog_discover_value() {
 #   SINCE\t<since>            (absent when the record has no @since)
 #   UNTIL\t<until>            (absent when the record has no @until)
 #   INTENT\t<intent>          (absent when the record has no @intent)
-#   RUNNABLE\t0|1              (1 is the default; 0 means copy-only)
+#   RUNNABLE\t1                (catalog records are always executable when
+#                                their service is resolved; the picker may
+#                                still disable a version-incompatible row)
 #   NOTES\t<notes>             (present when the record has @notes)
 #   PARAM\t<name>\t<example>\t<meaning>\t<keyword>:<value-class>
 #   OPTIONAL\t<name>\t<example>\t<meaning>\t<keyword>:<value-class>
@@ -643,12 +662,6 @@ _god_catalog_command_export() {
       value = $0
       sub(/^@intent[[:space:]]+/, "", value)
       print "INTENT\t" value
-      field = ""
-      next
-    }
-
-    selected && /^@runnable[[:space:]]+/ {
-      command_runnable = 0
       field = ""
       next
     }

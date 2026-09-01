@@ -3,18 +3,19 @@
 @description
 A curated MongoDB operator knowledge base covering local service checks, shell connections,
 replica-set health, database and collection inspection, common queries, live operations, backup,
-restore, and native tool help. Once BASH_GOD resolves a modern mongosh installation and you
-confirm a reviewed command, it can run genuine OS commands. Raw MongoDB shell snippets stay
-copy-only because they must run inside an already connected mongosh session. The detected mongosh
-client version applies only to direct mongosh command-line records; it does not establish MongoDB
-server, legacy mongo-shell, or MongoDB Database Tools compatibility. Replace every placeholder
-before using a command; no example contains credentials.
+restore, and native tool help. BASH_GOD prefers a modern mongosh installation and can fall back to
+the legacy mongo shell when that is the client the catalog finds. Shell expressions are launched
+through the selected client with --eval, so the picker always presents an executable command. The
+detected client version applies only to direct shell command-line records; it does not establish MongoDB server or MongoDB
+Database Tools compatibility. Replace every placeholder before using a command; no example
+contains credentials.
 
 @discover
-probe | mongosh | Modern MongoDB Shell executable; its presence marks a resolved shell installation
+probe | mongosh | Preferred modern MongoDB Shell executable
+probe | mongo | Legacy MongoDB shell fallback when mongosh is absent
 root | /usr/local/bin | Common Unix package-manager bin directory
 scan | /opt | Bounded scan root for package-managed MongoDB Shell installations
-version | mongosh --version | Reads the installed mongosh client version without connecting to a deployment
+version | <probe> --version | Reads the selected shell client version without connecting to a deployment
 
 
 @group service
@@ -69,7 +70,7 @@ journalctl -u mongod -n 200 --no-pager
 
 @command Connect with mongosh
 @mode MODERN
-@since 1.0
+@since 0.0
 @description
 Opens the modern MongoDB shell against one host, port, and database without embedding credentials.
 @run
@@ -84,7 +85,7 @@ This opens an interactive database shell; review the target because later shell 
 
 @command Connect with mongosh and an authentication prompt
 @mode MODERN
-@since 1.0
+@since 0.0
 @description
 Connects as one user and asks for the password interactively instead of exposing it in shell history.
 @run
@@ -99,7 +100,7 @@ Do not add a password to the URI or command line; use the hidden interactive pro
 
 @command Ping MongoDB with mongosh
 @mode MODERN
-@since 1.0
+@since 0.0
 @description
 Runs the read-only ping command and exits, confirming that the server accepts a shell connection.
 @run
@@ -145,61 +146,56 @@ Use the mongosh form on current installations.
 @command Show replica-set status
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Shows the current member's view of replica-set health, states, heartbeats, elections, and optimes.
 @run
-rs.status()
+mongosh --quiet --eval 'rs.status()'
 @notes
-Run inside mongosh while connected to a replica-set member. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target; use a replica-set member.
 @end
 
 @command Show replica-set configuration
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Displays the replica-set configuration, including member hosts, votes, priorities, and settings.
 @run
-rs.conf()
+mongosh --quiet --eval 'rs.conf()'
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target; use a replica-set member.
 @end
 
 @command Summarize replica-set members
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Returns a compact runtime view of each member's identity, state, health, and latest applied operation time.
 @run
-rs.status().members.map(function(m) { return { id: m._id, name: m.name, state: m.stateStr, health: m.health, optime: m.optimeDate }; })
+mongosh --quiet --eval 'rs.status().members.map(function(m) { return { id: m._id, name: m.name, state: m.stateStr, health: m.health, optime: m.optimeDate }; })'
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command. health 1 means the member is reachable from the member where this command runs; inspect state and optime together.
+health 1 means the member is reachable from the member where this command runs; inspect state and optime together.
 @end
 
 @command Show secondary replication lag
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Prints each secondary's synchronization source, last applied operation time, and estimated lag.
 @run
-rs.printSecondaryReplicationInfo()
+mongosh --quiet --eval 'rs.printSecondaryReplicationInfo()'
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command. Run on the primary when possible so every secondary can be compared against the same reference point.
+Run on the primary when possible so every secondary can be compared against the same reference point.
 @end
 
 @command Show the oplog time window
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Prints the configured oplog size and the time range currently retained on this replica-set member.
 @run
-rs.printReplicationInfo()
+mongosh --quiet --eval 'rs.printReplicationInfo()'
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command. The oplog window should comfortably exceed the longest expected secondary outage or replication delay.
+The oplog window should comfortably exceed the longest expected secondary outage or replication delay.
 @end
 
 
@@ -208,109 +204,102 @@ Run inside an already connected mongosh session. This JavaScript snippet is copy
 @command List databases
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Lists the databases visible to the current MongoDB user.
 @run
-show dbs
+mongosh --quiet --eval 'db.adminCommand({ listDatabases: 1 })'
 @notes
-Run inside an already connected mongosh session. This shell command is copy-only in BASH_GOD because it is not an OS command.
-@end
-
-@command Select a database
-@mode MODERN
-@since 0.0
-@runnable NO
-@description
-Changes only the current shell database context; it does not create a database until data is written.
-@run
-use <database>
-@params
-DATABASE | <database> | Database to inspect with subsequent shell commands
-@notes
-Run inside an already connected mongosh session. This shell command is copy-only in BASH_GOD because it changes that shell's context rather than running as an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command List collections
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Lists collections and views visible in the current database.
 @run
-show collections
+mongosh --quiet --eval 'db.getCollectionNames()'
 @notes
-Run inside an already connected mongosh session. This shell command is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command Show collection metadata
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Displays one collection's type, options, validator, and other catalog metadata.
 @run
-db.getCollectionInfos({ name: "<collection_name>" })
+mongosh --quiet --eval 'db.getCollectionInfos({ name: "<collection_name>" })'
 @params
 name | <collection_name> | Exact collection name to inspect
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command List collection indexes
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Shows every index definition, key pattern, name, and configured index option for one collection.
 @run
-db.getCollection("<collection_name>").getIndexes()
+mongosh --quiet --eval 'db.getCollection("<collection_name>").getIndexes()'
 @params
 COLLECTION | <collection_name> | Collection whose indexes should be inspected
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command Show database size and object statistics
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Shows collection, document, storage, and index totals for the current database in mebibytes.
 @run
-db.stats({ scale: 1024 * 1024 })
+mongosh --quiet --eval 'db.stats({ scale: 1024 * 1024 })'
 @params
 scale | 1024 * 1024 | Divide byte-based size fields into mebibytes
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command Show collection size and storage statistics
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Shows document count, logical size, allocated storage, and index totals for one collection in mebibytes.
 @run
-db.getCollection("<collection_name>").stats({ scale: 1024 * 1024 })
+mongosh --quiet --eval 'db.getCollection("<collection_name>").stats({ scale: 1024 * 1024 })'
 @params
 COLLECTION | <collection_name> | Collection whose storage should be inspected
 scale | 1024 * 1024 | Divide byte-based size fields into mebibytes
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 
 @group query
 
+@command Select a database
+@mode MODERN
+@since 0.0
+@description
+Opens the selected MongoDB client directly in one database so subsequent work starts in that context.
+@run
+mongosh "mongodb://<host>:27017/<database>"
+@params
+HOST | <host> | Resolvable MongoDB hostname
+DATABASE | <database> | Database to use after connecting
+@notes
+This opens an interactive shell; exit returns to BASH_GOD without creating a database unless data is written.
+@end
+
 @command Find matching documents with a limit
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Finds documents containing one exact field value and returns at most twenty results.
 @run
-db.getCollection("<collection_name>").find({ "<field>": "<value>" }).limit(20)
+mongosh --quiet --eval 'db.getCollection("<collection_name>").find({ "<field>": "<value>" }).limit(20)'
 @params
 COLLECTION | <collection_name> | Collection to query
 FIELD | <field> | Document field used by the filter
@@ -319,101 +308,95 @@ limit | 20 | Maximum documents returned to the shell
 @optional
 maxTimeMS() | 5000 | Add .maxTimeMS(5000) to stop server work after five seconds
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command Find one document by ObjectId
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Looks up one document by its standard MongoDB _id ObjectId value.
 @run
-db.getCollection("<collection_name>").findOne({ _id: ObjectId("<object_id>") })
+mongosh --quiet --eval 'db.getCollection("<collection_name>").findOne({ _id: ObjectId("<object_id>") })'
 @params
 COLLECTION | <collection_name> | Collection to query
 ObjectId | <object_id> | Twenty-four-character hexadecimal ObjectId string
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command Return only selected fields
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Filters documents and projects only the requested field while excluding _id.
 @run
-db.getCollection("<collection_name>").find({ "<field>": "<value>" }, { "<field_to_return>": 1, _id: 0 }).limit(20)
+mongosh --quiet --eval 'db.getCollection("<collection_name>").find({ "<field>": "<value>" }, { "<field_to_return>": 1, _id: 0 }).limit(20)'
 @params
 FILTER | "<field>": "<value>" | Exact field-value condition
 PROJECTION | "<field_to_return>": 1 | Include this field in each result
 _id | 0 | Exclude the _id field from each result
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command Show the newest documents
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Sorts one collection by a timestamp field in descending order and returns the latest twenty documents.
 @run
-db.getCollection("<collection_name>").find({}).sort({ "<timestamp_field>": -1 }).limit(20)
+mongosh --quiet --eval 'db.getCollection("<collection_name>").find({}).sort({ "<timestamp_field>": -1 }).limit(20)'
 @params
 COLLECTION | <collection_name> | Collection to query
 TIMESTAMP_FIELD | <timestamp_field> | Date or sortable sequence field
 sort | -1 | Descending order so newest values appear first
 limit | 20 | Maximum documents returned
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command Count matching documents
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Returns an exact count of documents matching one field-value condition.
 @run
-db.getCollection("<collection_name>").countDocuments({ "<field>": "<value>" })
+mongosh --quiet --eval 'db.getCollection("<collection_name>").countDocuments({ "<field>": "<value>" })'
 @params
 COLLECTION | <collection_name> | Collection to count
 FILTER | "<field>": "<value>" | Condition documents must match
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command Search a string field with a case-insensitive regular expression
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Finds up to twenty documents whose selected field matches a case-insensitive regular expression.
 @run
-db.getCollection("<collection_name>").find({ "<field>": { $regex: "<pattern>", $options: "i" } }).limit(20)
+mongosh --quiet --eval 'db.getCollection("<collection_name>").find({ "<field>": { $regex: "<pattern>", $options: "i" } }).limit(20)'
 @params
 $regex | <pattern> | Regular expression applied to the selected field
 $options | i | Make matching case-insensitive
 limit | 20 | Maximum documents returned
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command. An unanchored regular expression can scan many documents; inspect indexes and narrow the pattern on large collections.
+An unanchored regular expression can scan many documents; inspect indexes and narrow the pattern on large collections.
 @end
 
 @command Explain a query with execution statistics
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Shows the winning plan, index usage, documents examined, keys examined, and execution timing for a find query.
 @run
-db.getCollection("<collection_name>").explain("executionStats").find({ "<field>": "<value>" })
+mongosh --quiet --eval 'db.getCollection("<collection_name>").explain("executionStats").find({ "<field>": "<value>" })'
 @params
 executionStats | mode | Execute the read query and include runtime statistics
 FILTER | "<field>": "<value>" | Query whose plan should be inspected
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command. This executes the read query to measure it but does not modify documents.
+This executes the read query to measure it but does not modify documents.
 @end
 
 
@@ -422,52 +405,48 @@ Run inside an already connected mongosh session. This JavaScript snippet is copy
 @command Show complete MongoDB server status
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Returns a broad snapshot of process state, memory, connections, network traffic, locks, and storage-engine metrics.
 @run
-db.serverStatus()
+mongosh --quiet --eval 'db.serverStatus()'
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command. The output is large; use the focused rows in this group when only one metric family is needed.
+The output is large; use the focused rows in this group when only one metric family is needed.
 @end
 
 @command Show MongoDB connection usage
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Displays current, available, active, and rejected client connection counters.
 @run
-db.serverStatus().connections
+mongosh --quiet --eval 'db.serverStatus().connections'
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command.
+Runs against the selected shell's normal connection target.
 @end
 
 @command Show active MongoDB operations
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Lists database operations that are currently active on the connected server.
 @run
-db.currentOp({ active: true })
+mongosh --quiet --eval 'db.currentOp({ active: true })'
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command. Viewing every user's operations requires the inprog privilege; without it, use db.currentOp({ $ownOps: true }) for your own operations.
+Viewing every user's operations requires the inprog privilege; without it, use db.currentOp({ $ownOps: true }) for your own operations.
 @end
 
 @command Find long-running operations for one database
 @mode MODERN
 @since 0.0
-@runnable NO
 @description
 Lists active operations running longer than five seconds in one database namespace.
 @run
-db.currentOp({ active: true, secs_running: { $gt: 5 }, ns: /^<database>\./ })
+mongosh --quiet --eval 'db.currentOp({ active: true, secs_running: { $gt: 5 }, ns: /^<database>\./ })'
 @params
 $gt | 5 | Minimum elapsed runtime in seconds
 ns | /^<database>\./ | Match namespaces belonging to this database
 @notes
-Run inside an already connected mongosh session. This JavaScript snippet is copy-only in BASH_GOD because it is not an OS command. This only inspects operations; it does not terminate them.
+This only inspects operations; it does not terminate them.
 @end
 
 
@@ -596,36 +575,24 @@ This inserts data and can create missing databases or collections. Use the same 
 
 @group native
 
-@command Show mongosh command-line help
+@command Show MongoDB shell command-line help
 @mode MODERN
-@since 1.0
+@since 0.0
 @description
-Displays connection, authentication, script, output, TLS, and other options supported by the installed mongosh version.
+Displays connection, authentication, script, output, TLS, and other options supported by the selected MongoDB shell.
 @run
 mongosh --help
 @end
 
-@command Show mongosh in-shell help
-@mode MODERN
-@since 0.0
-@runnable NO
-@description
-Lists help topics and shell commands from inside an active mongosh session.
-@run
-help
-@notes
-Run inside an already connected mongosh session. This shell command is copy-only in BASH_GOD because it is not an OS command.
-@end
-
-@command Show legacy mongo shell native help
+@command Show MongoDB database shell help
 @mode MODERN
 @since 0.0
 @description
-Displays command-line options supported by an installed legacy mongo shell.
+Lists the database methods available through the selected MongoDB shell.
 @run
-mongo --help
+mongosh --quiet --eval 'db.help()'
 @notes
-The mongo binary is not included with newer MongoDB releases; use mongosh --help when mongo is absent.
+Runs against the selected shell's normal connection target.
 @end
 
 @command Show mongodump native help

@@ -87,6 +87,13 @@ _god_discover_version() {
   _god_discover_cache_get "$1.version"
 }
 
+# The selected member of an ordered catalog probe family. Old caches do not
+# have this key; callers treat that as a prompt to use the catalog primary or
+# refresh once, never as a failure.
+_god_discover_tool() {
+  _god_discover_cache_get "$1.tool"
+}
+
 # ---------------------------------------------------------------------------
 # User override: an installed native tool that sits outside the catalog's
 # root/PATH/scan reach (a custom directory, an old extracted tarball) needs
@@ -137,30 +144,62 @@ _god_discover_probe_at() {
   [ -n "$1" ] && [ -x "$1/$2" ]
 }
 
-_god_discover_find_via_path() {
-  local probe hit
+# _god_discover_find_in_dir DIRECTORY PROBES
+#
+# PROBES is a newline-separated, catalog-declared tool family. Prints the
+# selected directory and tool as DIRECTORY<TAB>TOOL, choosing the first tool
+# that actually exists in the directory.
+_god_discover_find_in_dir() {
+  local directory probes probe
 
-  probe=$1
-  hit="$(command -v -- "$probe" 2>/dev/null)" || return 1
-  case "$hit" in
-    */*) printf '%s\n' "${hit%/*}" ;;
-    *) return 1 ;;
-  esac
+  directory=$1
+  probes=$2
+  [ -n "$directory" ] || return 1
+  while IFS= read -r probe; do
+    [ -n "$probe" ] || continue
+    if _god_discover_probe_at "$directory" "$probe"; then
+      printf '%s\t%s\n' "$directory" "$probe"
+      return 0
+    fi
+  done <<< "$probes"
+  return 1
+}
+
+_god_discover_find_via_path() {
+  local probes probe hit
+
+  probes=$1
+  while IFS= read -r probe; do
+    [ -n "$probe" ] || continue
+    hit="$(command -v -- "$probe" 2>/dev/null)" || continue
+    case "$hit" in
+      */*)
+        printf '%s\t%s\n' "${hit%/*}" "$probe"
+        return 0
+        ;;
+    esac
+  done <<< "$probes"
+  return 1
 }
 
 # Bounded so a missing install never turns into a full-disk crawl.
 _god_discover_scan_depth=6
 
 _god_discover_find_via_scan() {
-  local scan probe hit
+  local scan probes probe hit
 
   scan=$1
-  probe=$2
+  probes=$2
   [ -n "$scan" ] && [ -d "$scan" ] || return 1
-  hit="$(command find "$scan" -maxdepth "$_god_discover_scan_depth" \
-    -type f -name "$probe" -perm -u+x 2>/dev/null | LC_ALL=C sort | head -n 1)"
-  [ -n "$hit" ] || return 1
-  printf '%s\n' "${hit%/*}"
+  while IFS= read -r probe; do
+    [ -n "$probe" ] || continue
+    hit="$(command find "$scan" -maxdepth "$_god_discover_scan_depth" \
+      -type f -name "$probe" -perm -u+x 2>/dev/null | LC_ALL=C sort | head -n 1)"
+    [ -n "$hit" ] || continue
+    printf '%s\t%s\n' "${hit%/*}" "$probe"
+    return 0
+  done <<< "$probes"
+  return 1
 }
 
 _god_discover_extract_version() {
@@ -195,36 +234,40 @@ _god_discover_detect_version() {
 #   1  catalog declares no @discover block (display-only service)
 #   2  probe was not found anywhere
 _god_discover_resolve() {
-  local service catalog probe root scan version_command path version user_path
+  local service catalog probes root scan version_command candidate path tool version user_path
 
   service=$1
   catalog=$2
 
   _god_catalog_has_discover "$catalog" || return 1
 
-  probe="$(_god_catalog_discover_value "$catalog" probe)"
+  probes="$(_god_catalog_discover_probes "$catalog")"
   root="$(_god_catalog_discover_value "$catalog" root)"
   scan="$(_god_catalog_discover_value "$catalog" scan)"
   version_command="$(_god_catalog_discover_value "$catalog" version)"
-  [ -n "$probe" ] || return 1
+  [ -n "$probes" ] || return 1
 
-  path=''
+  candidate=''
   user_path="$(_god_discover_user_path "$service")"
-  if [ -n "$user_path" ] && _god_discover_probe_at "$user_path" "$probe"; then
-    path=$user_path
-  elif [ -n "$root" ] && _god_discover_probe_at "$root" "$probe"; then
-    path=$root
-  elif path="$(_god_discover_find_via_path "$probe")" && [ -n "$path" ]; then
+  if [ -n "$user_path" ] && candidate="$(_god_discover_find_in_dir "$user_path" "$probes")"; then
+    :
+  elif [ -n "$root" ] && candidate="$(_god_discover_find_in_dir "$root" "$probes")"; then
+    :
+  elif candidate="$(_god_discover_find_via_path "$probes")"; then
     :
   else
-    path="$(_god_discover_find_via_scan "$scan" "$probe")" || path=''
+    candidate="$(_god_discover_find_via_scan "$scan" "$probes")" || candidate=''
   fi
-  [ -n "$path" ] || return 2
+  [ -n "$candidate" ] || return 2
+  IFS="$(printf '\t')" read -r path tool <<< "$candidate"
+  [ -n "$path" ] && [ -n "$tool" ] || return 2
 
+  version_command="${version_command//<probe>/$tool}"
   version="$(_god_discover_detect_version "$path" "$version_command")"
 
   _god_discover_cache_set "${service}.path" "$path" || return 2
   _god_discover_cache_set "${service}.version" "$version" || return 2
+  _god_discover_cache_set "${service}.tool" "$tool" || return 2
   return 0
 }
 
@@ -234,14 +277,25 @@ _god_discover_resolve() {
 # confirming the cached probe still exists where it was found. 0 means stale
 # or never resolved; 1 means the cache is still good.
 _god_discover_is_stale() {
-  local service catalog path probe
+  local service catalog path tool probe probes declared
 
   service=$1
   catalog=$2
   path="$(_god_discover_path "$service")"
   [ -n "$path" ] || return 0
-  probe="$(_god_catalog_discover_value "$catalog" probe)"
-  [ -n "$probe" ] || return 0
-  _god_discover_probe_at "$path" "$probe" && return 1
+  tool="$(_god_discover_tool "$service")"
+  # Releases before probe-family caching stored only path/version. Their
+  # primary probe remains a safe fallback until the next explicit resync.
+  [ -n "$tool" ] || tool="$(_god_catalog_discover_value "$catalog" probe)"
+  probes="$(_god_catalog_discover_probes "$catalog")"
+  declared=1
+  while IFS= read -r probe; do
+    if [ "$probe" = "$tool" ]; then
+      declared=0
+      break
+    fi
+  done <<< "$probes"
+  [ "$declared" -eq 0 ] || return 0
+  _god_discover_probe_at "$path" "$tool" && return 1
   return 0
 }

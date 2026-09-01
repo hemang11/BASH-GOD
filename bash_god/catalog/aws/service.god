@@ -121,16 +121,15 @@ TOKEN=$(curl -sX PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metad
 The shown request returns only a role name and keeps the short-lived IMDSv2 token inside this command. Do not change the URL to retrieve credentials unless you are authorized to handle secret output; never paste access keys or session tokens into a ticket, log, or chat.
 @end
 
-@command Ignore exported keys and fall back to the instance role
+@command Verify the instance role without exported keys
 @mode LOCAL
 @since 0.0
-@runnable NO
 @description
-Clears the AWS credential environment variables in the current shell so the CLI resolves credentials from instance metadata, which confirms whether an attached instance profile actually works.
+Runs one identity query with exported credential variables removed, proving whether the AWS CLI can fall back to an attached instance role or another lower-priority credential source.
 @run
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN aws sts get-caller-identity
 @notes
-Copy this into your own interactive shell: a child process cannot alter the caller's environment. The credential chain prefers environment variables, then ~/.aws/credentials, then instance metadata, so exported keys can mask an attached role until they are cleared.
+This leaves the caller's environment unchanged. The credential chain prefers environment variables, then ~/.aws/credentials, then instance metadata, so exported keys can mask an attached role until they are omitted for this one command.
 @end
 
 

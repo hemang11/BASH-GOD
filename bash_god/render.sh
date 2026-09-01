@@ -104,6 +104,7 @@ _god_print_view_keys() {
     printf '  %s%-38s%s %sSearch every catalog%s\n' "$_GOD_COMMAND" 'god q WORDS' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sSearch help and examples%s\n' "$_GOD_COMMAND" 'god q --help' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sSee detected executable service directories%s\n' "$_GOD_COMMAND" 'god --paths' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+    printf '  %s%-38s%s %sRefresh every detectable service%s\n' "$_GOD_COMMAND" 'god --resync' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sForce a fresh probe for one service%s\n' "$_GOD_COMMAND" 'god SERVICE --resync' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sShow BASH_GOD version and license%s\n' "$_GOD_COMMAND" 'god --version' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sCompletely remove a managed GitHub install%s\n' "$_GOD_COMMAND" 'god --uninstall' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
@@ -123,6 +124,7 @@ _god_print_root_help() {
   printf '  %s%-44s%s %sSearch Kafka by remembered intent%s\n' "$_GOD_COMMAND" 'god kafka q "Get all consumers in a broker"' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
   printf '  %s%-44s%s %sUse an explicit regular expression%s\n' "$_GOD_COMMAND" "god q --regex 'offset|lag'" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
   printf '  %s%-44s%s %sSee what BASH_GOD has resolved on this machine%s\n' "$_GOD_COMMAND" 'god --paths' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+  printf '  %s%-44s%s %sRefresh every detectable service%s\n' "$_GOD_COMMAND" 'god --resync' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
   printf '  %s%-44s%s %sForce a fresh probe if Kafka moved%s\n' "$_GOD_COMMAND" 'god kafka --resync' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
 
   printf '\n%sVIEW KEYS%s\n' "$_GOD_BOLD" "$_GOD_RESET"

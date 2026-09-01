@@ -223,6 +223,56 @@ else
   fail 'resolved-path view uses operator language instead of catalog grammar'
 fi
 
+root_resync_log="$smoke_home/root-resync.log"
+: > "$root_resync_log"
+root_resync_output="$(ROOT_RESYNC_LOG="$root_resync_log" GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_discover_resolve() {
+    printf "%s\\n" "$1" >> "$ROOT_RESYNC_LOG"
+    case "$1" in
+      elasticsearch|kafka|mongo) return 0 ;;
+      *) return 2 ;;
+    esac
+  }
+  _god_discover_path() {
+    case "$1" in
+      elasticsearch) printf "/fixtures/elasticsearch\\n" ;;
+      kafka) printf "/fixtures/kafka\\n" ;;
+      mongo) printf "/fixtures/mongo\\n" ;;
+    esac
+  }
+  _god_discover_tool() {
+    case "$1" in
+      elasticsearch) printf "curl\\n" ;;
+    esac
+  }
+  _god_discover_version() {
+    case "$1" in
+      elasticsearch) printf "8.15.2\\n" ;;
+      kafka) printf "1.1.0\\n" ;;
+      mongo) printf "2.4.1\\n" ;;
+    esac
+  }
+  god --resync
+' _ "$project_dir" "$root_resync_log")"
+root_resync_calls="$(command cat "$root_resync_log")"
+root_resync_usage_status=0
+GOD_COLOR=never "$god_cli" --resync unexpected >/dev/null 2>&1 || root_resync_usage_status=$?
+expected_root_resync_calls="$(printf 'aws\nelasticsearch\nk8s\nkafka\nmongo')"
+if contains "$root_resync_output" 'BASH_GOD / RESYNC' && \
+   contains "$root_resync_output" '/fixtures/elasticsearch (curl v8.15.2)' && \
+   contains "$root_resync_output" '/fixtures/kafka (version 1.1.0)' && \
+   contains "$root_resync_output" '/fixtures/mongo (version 2.4.1)' && \
+   contains "$root_resync_output" 'aws              not found (aws)' && \
+   contains "$root_resync_output" '3 of 5 detectable services refreshed.' && \
+   not_contains "$root_resync_output" 'network' && \
+   [ "$root_resync_calls" = "$expected_root_resync_calls" ] && \
+   [ "$root_resync_usage_status" -eq 2 ]; then
+  pass 'root --resync refreshes every discoverable service, including Elasticsearch'
+else
+  fail 'root --resync refreshes every discoverable service, including Elasticsearch'
+fi
+
 maintenance_bare_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; _god_run_maintenance() { printf "maintenance:%s\n" "$1"; }; GOD_COLOR=never god' _ "$project_dir")"
 maintenance_help_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; _god_run_maintenance() { printf "maintenance:%s\n" "$1"; }; GOD_COLOR=never god help' _ "$project_dir")"
 maintenance_quiet_output="$(bash -c '. "$1/BASH_GOD.sh"; _god_stdout_is_terminal() { return 0; }; _god_run_maintenance() { printf "maintenance:%s\n" "$1"; }; GOD_COLOR=never god --quiet' _ "$project_dir")"
@@ -1069,10 +1119,10 @@ fi
 mongo_service_output="$(GOD_COLOR=never "$god_cli" mongo service)"
 mongo_backup_output="$(GOD_COLOR=never "$god_cli" mongo backup)"
 mongo_replica_output="$(GOD_COLOR=never "$god_cli" mongo replica)"
-if contains "$mongo_service_output" '$ systemctl status mongod' && contains "$mongo_backup_output" '$ mongodump ' && contains "$mongo_backup_output" '$ mongorestore ' && contains "$mongo_backup_output" '[WRITE]' && contains "$mongo_replica_output" '$ rs.status()'; then
-  pass 'MongoDB catalog covers service, replica-set, dump, and restore memory'
+if contains "$mongo_service_output" '$ systemctl status mongod' && contains "$mongo_backup_output" '$ mongodump ' && contains "$mongo_backup_output" '$ mongorestore ' && contains "$mongo_backup_output" '[WRITE]' && contains "$mongo_replica_output" "\$ mongosh --quiet --eval 'rs.status()'"; then
+  pass 'MongoDB catalog covers executable service, replica-set, dump, and restore commands'
 else
-  fail 'MongoDB catalog covers service, replica-set, dump, and restore memory'
+  fail 'MongoDB catalog covers executable service, replica-set, dump, and restore commands'
 fi
 
 k8s_logs_output="$(GOD_COLOR=never "$god_cli" k8s logs)"

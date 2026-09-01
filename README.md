@@ -95,6 +95,7 @@ god kafka offset 1               # Explain one displayed command
 god kafka q "Get all consumers in a broker"  # Search by remembered intent — on a TTY, pick, edit, or run a row
 god kafka --tree --full          # Show the full Kafka command tree
 god --paths                      # See what BASH_GOD has resolved on this machine
+god --resync                     # Refresh every detectable service
 god kafka --resync               # Force a fresh probe if Kafka moved
 ```
 
@@ -113,11 +114,11 @@ Search is case-insensitive and checks command titles, descriptions, native synta
 | Area | Start here |
 |---|---|
 | AWS identity and Route 53 (executable when the AWS CLI resolves) | `god aws` |
-| Elasticsearch (executable through PATH) | `god elasticsearch` |
+| Elasticsearch (executable when curl resolves; version-aware after resync) | `god elasticsearch` |
 | Host, CPU, memory, disk, and processes (executable through PATH) | `god general` |
 | Kubernetes (executable when kubectl resolves) | `god k8s` |
 | Kafka (executable when its installation resolves) | `god kafka` |
-| MongoDB (executable when mongosh resolves; shell snippets stay copy-only) | `god mongo` |
+| MongoDB (executable when its MongoDB shell resolves) | `god mongo` |
 | Networking, DNS, HTTP, and SSH (executable through PATH) | `god network` |
 
 The catalog is deliberately curated around common operational work rather than every flag in every manual. Each service has a `native` group when you need the installed tool's full help.
@@ -167,22 +168,21 @@ Preview it without executing the native command:
 ./bash_god/tests/smoke.sh
 ```
 
-See the [catalog contribution guide](bash_god/AGENTS.md) for parameters, optional flags, risk markers, new groups, and new services.
+See the [contributor workflow](CONTRIBUTING.md) for a practical new-service and command-update path.
+[`bash_god/AGENTS.md`](bash_god/AGENTS.md) remains the complete catalog contract.
 
 ## Safety
 
 - BASH_GOD displays catalog commands. Services that declare `@discover` or `@execution PATH` can
   also run one—but only after the complete command is visible in the in-place interactive picker;
   press `e` to edit it in a normal readline prompt or Enter to run the selected row. Incompatible,
-  copy-only, unresolved, and display-only rows cannot execute.
+  unresolved, and display-only rows cannot execute.
 - Values BASH_GOD fills in from your query or a prompt are never turned into shell syntax: they are
   passed as arguments to the command, not interpolated into its text.
 - `WRITE`, `WARN`, and `DELETE` describe the native command's impact and stay visible on the selected
   picker row; they do not block execution once the operator presses Enter.
-- A record that only changes a child shell's state (`cd`, `export`, `unset`, `source`) is never
-  offered for execution; it is shown with a note instead.
-- Copy-only records, such as raw MongoDB shell snippets, remain searchable and copyable but cannot
-  be edited or run from the picker.
+- Every record in an executable catalog is an actual command. Do not add a child-shell-only operation
+  such as `cd`, `export`, `unset`, or `source`; express the useful one-command check instead.
 - No terminal, no execution — the interactive picker and any value prompts require one, always.
 - Replace every `<placeholder>` BASH_GOD did not fill in before running or copying a command.
 - Never put credentials, tokens, private keys, authenticated URIs, or production payloads in a catalog.
@@ -210,7 +210,8 @@ zsh -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh packaging/*.sh packagin
 
 ## Documentation
 
-- [Add or change catalog knowledge](bash_god/AGENTS.md)
+- [Contribute catalog knowledge](CONTRIBUTING.md)
+- [Full catalog contract](bash_god/AGENTS.md)
 - [Knowledge-base architecture](bash_god/docs/architecture/bash-god-knowledge-base-architecture.md)
 - [Build, verify, and publish runtime packages](packaging/README.md)
 

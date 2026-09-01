@@ -50,6 +50,10 @@ export_field() {
   '
 }
 
+catalog_directive_count() {
+  LC_ALL=C awk -v directive="$2" 'index($0, directive) == 1 { count++ } END { print count + 0 }' "$1"
+}
+
 # Returns GROUP<TAB>ENTRY for the first native @run whose leading command is
 # PROBE. This keeps the fixture focused on a copyable catalog spelling rather
 # than a particular row number.
@@ -103,6 +107,7 @@ mkdir -p \
   "$fixture_root/fake/k8s" \
   "$fixture_root/fake/aws" \
   "$fixture_root/fake/mongo" \
+  "$fixture_root/fake/elasticsearch" \
   "$fixture_root/fake/path" || exit 1
 
 native_log="$fixture_root/native.log"
@@ -138,10 +143,19 @@ printf '%s\n' \
   '  exit 0' \
   'fi' \
   'exit 97' > "$fixture_root/fake/mongo/mongosh"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "curl|%s\\n" "$*" >> "$BASH_GOD_EXECUTION_ROLLOUT_NATIVE_LOG"' \
+  'if [ "$1" = -fsS ] && [ "$2" = --connect-timeout ] && [ "$3" = 1 ] && [ "$4" = --max-time ] && [ "$5" = 2 ] && [ "$6" = http://localhost:9200/ ]; then' \
+  '  printf "{\\\"version\\\":{\\\"number\\\":\\\"8.15.2\\\"}}\\n"' \
+  '  exit 0' \
+  'fi' \
+  'exit 97' > "$fixture_root/fake/elasticsearch/curl"
 chmod 0700 \
   "$fixture_root/fake/k8s/kubectl" \
   "$fixture_root/fake/aws/aws" \
-  "$fixture_root/fake/mongo/mongosh" || exit 1
+  "$fixture_root/fake/mongo/mongosh" \
+  "$fixture_root/fake/elasticsearch/curl" || exit 1
 
 # PATH-service stubs must never be invoked merely to offer the rich picker.
 for tool in curl hostname ssh; do
@@ -155,6 +169,7 @@ done
 printf 'path=%s\n' "$fixture_root/fake/k8s" > "$fixture_root/config/bash-god/k8s.conf"
 printf 'path=%s\n' "$fixture_root/fake/aws" > "$fixture_root/config/bash-god/aws.conf"
 printf 'path=%s\n' "$fixture_root/fake/mongo" > "$fixture_root/config/bash-god/mongo.conf"
+printf 'path=%s\n' "$fixture_root/fake/elasticsearch" > "$fixture_root/config/bash-god/elasticsearch.conf"
 
 export HOME="$fixture_root/home"
 export XDG_CONFIG_HOME="$fixture_root/config"
@@ -178,14 +193,25 @@ else
   fail 'all non-Kafka rollout catalogs validate before execution tests'
 fi
 
+elasticsearch_commands="$(catalog_directive_count "$elasticsearch_catalog" '@command')"
+elasticsearch_since="$(catalog_directive_count "$elasticsearch_catalog" '@since')"
+if [ "$(_god_catalog_execution_mode "$elasticsearch_catalog")" = DISCOVER ] && \
+   _god_catalog_has_discover "$elasticsearch_catalog" && \
+   [ "$elasticsearch_commands" -gt 0 ] && \
+   [ "$elasticsearch_since" = "$elasticsearch_commands" ]; then
+  pass 'Elasticsearch declares discovery and a compatibility floor for every command'
+else
+  fail 'Elasticsearch declares discovery and a compatibility floor for every command'
+fi
+
 # Discovery and resolution contract: the source catalog stays copyable while
 # the rich execution model gets exactly one absolute rewrite of its declared
 # leading probe. No arbitrary later/bare word may be rewritten.
-services=(k8s aws mongo)
-catalogs=("$k8s_catalog" "$aws_catalog" "$mongo_catalog")
-probes=(kubectl aws mongosh)
-fake_dirs=("$fixture_root/fake/k8s" "$fixture_root/fake/aws" "$fixture_root/fake/mongo")
-versions=(1.28.7 2.36.34 2.4.1)
+services=(k8s aws mongo elasticsearch)
+catalogs=("$k8s_catalog" "$aws_catalog" "$mongo_catalog" "$elasticsearch_catalog")
+probes=(kubectl aws mongosh curl)
+fake_dirs=("$fixture_root/fake/k8s" "$fixture_root/fake/aws" "$fixture_root/fake/mongo" "$fixture_root/fake/elasticsearch")
+versions=(1.28.7 2.36.34 2.4.1 8.15.2)
 
 index=0
 while [ "$index" -lt "${#services[@]}" ]; do
@@ -240,7 +266,8 @@ done
 if has_exact_line "$(command cat "$native_log")" 'kubectl|version --client' && \
    has_exact_line "$(command cat "$native_log")" 'aws|--version' && \
    has_exact_line "$(command cat "$native_log")" 'mongosh|--version' && \
-   [ "$(LC_ALL=C wc -l < "$native_log" | tr -d '[:space:]')" = 3 ]; then
+   has_exact_line "$(command cat "$native_log")" 'curl|-fsS --connect-timeout 1 --max-time 2 http://localhost:9200/' && \
+   [ "$(LC_ALL=C wc -l < "$native_log" | tr -d '[:space:]')" = 4 ]; then
   pass 'discoverable-service fixtures received version probes only'
 else
   fail 'discoverable-service fixtures received version probes only'
@@ -285,14 +312,12 @@ path_offer_output="$(
       return 0
     }
 
-    _god_search "cluster health" smart list elasticsearch "" 0 || exit $?
     _god_search "current hostname" smart list general "" 0 || exit $?
     _god_search "HTTP response headers" smart list network "" 0
   ' _ "$project_dir"
 )"
 
-if printf '%s\n' "$path_offer_output" | LC_ALL=C grep -Fq 'RICH|ELASTICSEARCH SEARCH RESULTS|path=|Show cluster health|curl -sS' && \
-   printf '%s\n' "$path_offer_output" | LC_ALL=C grep -Fq 'RICH|GENERAL SEARCH RESULTS|path=|Show the current hostname|hostname' && \
+if printf '%s\n' "$path_offer_output" | LC_ALL=C grep -Fq 'RICH|GENERAL SEARCH RESULTS|path=|Show the current hostname|hostname' && \
    printf '%s\n' "$path_offer_output" | LC_ALL=C grep -Fq 'RICH|NETWORK SEARCH RESULTS|path=|Show HTTP response headers|curl -sS -I <url>' && \
    [ ! -s "$discovery_log" ] && \
    [ "$(command cat "$native_log")" = "$native_log_before_path_offer" ]; then
@@ -301,23 +326,35 @@ else
   fail 'PATH services offer rich previews without discovery or native execution'
 fi
 
-# PATH services have no discovered version/path, but their rich model still
-# needs to keep query-derived values out of shell syntax. This row embeds a
-# placeholder inside single quotes, which is the easy case to regress into
-# string interpolation rather than a positional bash -c argument.
+# Elasticsearch now uses the same discovered service path as the other
+# versioned catalogs. Its URL placeholder is embedded inside single quotes,
+# which is the easy case to regress into string interpolation rather than a
+# positional bash -c argument.
 es_location="$(location_for_title "$elasticsearch_catalog" 'Count documents in an index')"
 IFS="$(printf '\t')" read -r es_group es_entry <<< "$es_location"
-es_pending_model="$(_god_resolve_command elasticsearch "$elasticsearch_catalog" "$es_group" "$es_entry" '' '')"
-es_bound_model="$(_god_resolve_command elasticsearch "$elasticsearch_catalog" "$es_group" "$es_entry" '' 'index "orders-v1"')"
-es_path_ignored_model="$(_god_resolve_command elasticsearch "$elasticsearch_catalog" "$es_group" "$es_entry" '/must-not-rewrite' 'index "orders-v1"')"
-es_expected_template=$'TEMPLATE\t'"curl -sS 'http://localhost:9200/'\"\${1}\"'/_count?pretty'"
+es_pending_model="$(_god_resolve_command elasticsearch "$elasticsearch_catalog" "$es_group" "$es_entry" "$fixture_root/fake/elasticsearch" '')"
+es_bound_model="$(_god_resolve_command elasticsearch "$elasticsearch_catalog" "$es_group" "$es_entry" "$fixture_root/fake/elasticsearch" 'index "orders-v1"')"
+es_expected_template=$'TEMPLATE\t'"$fixture_root/fake/elasticsearch/curl -sS 'http://localhost:9200/'\"\${1}\"'/_count?pretty'"
 if has_exact_line "$es_pending_model" $'PENDING\t<index_name>\t<index_name>\torders-v1\tIndex or alias whose documents should be counted' && \
    has_exact_line "$es_bound_model" "$es_expected_template" && \
    has_exact_line "$es_bound_model" $'VALUE\torders-v1' && \
-   has_exact_line "$es_path_ignored_model" $'DISPLAY\tcurl -sS '\''http://localhost:9200/orders-v1/_count?pretty'\'''; then
-  pass 'Elasticsearch PATH rich models keep values positional and ignore a supplied path'
+   has_exact_line "$es_bound_model" $'DISPLAY\t'"$fixture_root/fake/elasticsearch/curl -sS 'http://localhost:9200/orders-v1/_count?pretty'"; then
+  pass 'Elasticsearch discovery models rewrite curl and keep URL values positional'
 else
-  fail 'Elasticsearch PATH rich models keep values positional and ignore a supplied path'
+  fail 'Elasticsearch discovery models rewrite curl and keep URL values positional'
+fi
+
+# A URI uses two placeholders inside one double-quoted shell word. The model
+# must execute them as positional arguments rather than pass literal template
+# text to the native client.
+mongo_uri_template='printf "%s\n" "mongodb://<host>:27017/<database>"'
+mongo_uri_template="$(_god_resolve_replace_template_span "$mongo_uri_template" '<host>' 1)"
+mongo_uri_template="$(_god_resolve_replace_template_span "$mongo_uri_template" '<database>' 2)"
+mongo_uri_result="$(bash -c "$mongo_uri_template" god-run localhost ontic_org_2)"
+if [ "$mongo_uri_result" = 'mongodb://localhost:27017/ontic_org_2' ]; then
+  pass 'quoted URI placeholders become executable positional arguments'
+else
+  fail 'quoted URI placeholders become executable positional arguments'
 fi
 
 # A discovered service with no usable cached path must take the established
@@ -362,45 +399,25 @@ else
   fail 'unresolved discovery stays on the static matching-operations screen'
 fi
 
-# Actual disabled catalog rows must refuse before resolver or child-shell work.
+# An executable catalog has no independent non-executable state: these rows are
+# ordinary runnable commands once their service is resolved.
 mongo_location="$(location_for_title "$mongo_catalog" 'Show replica-set status')"
-aws_location="$(location_for_title "$aws_catalog" 'Ignore exported keys and fall back to the instance role')"
+aws_location="$(location_for_title "$aws_catalog" 'Verify the instance role without exported keys')"
 IFS="$(printf '\t')" read -r mongo_group mongo_entry <<< "$mongo_location"
 IFS="$(printf '\t')" read -r aws_group aws_entry <<< "$aws_location"
 mongo_export="$(_god_catalog_command_export "$mongo_catalog" "$mongo_group" "$mongo_entry")"
 aws_export="$(_god_catalog_command_export "$aws_catalog" "$aws_group" "$aws_entry")"
-
-disabled_execution_result="$(
-  child_launches=0
-  resolver_calls=0
-  bash() {
-    child_launches=$((child_launches + 1))
-    return 97
-  }
-  _god_resolve_command_interactive() {
-    resolver_calls=$((resolver_calls + 1))
-    return 97
-  }
-
-  mongo_status=0
-  aws_status=0
-  _god_execute_command mongo "$mongo_catalog" "$mongo_group" "$mongo_entry" "$fixture_root/fake/mongo" '' 1 >/dev/null 2>&1 || mongo_status=$?
-  _god_execute_command aws "$aws_catalog" "$aws_group" "$aws_entry" "$fixture_root/fake/aws" '' 1 >/dev/null 2>&1 || aws_status=$?
-  printf '%s|%s|%s|%s\n' "$mongo_status" "$aws_status" "$resolver_calls" "$child_launches"
-)"
-
-if has_exact_line "$mongo_export" $'RUNNABLE\t0' && \
-   has_exact_line "$aws_export" $'RUNNABLE\t0' && \
-   [ "$disabled_execution_result" = '2|2|0|0' ]; then
-  pass 'Mongo raw snippets and AWS unset rows refuse before resolver or child launch'
+if has_exact_line "$mongo_export" $'RUNNABLE\t1' && \
+   has_exact_line "$aws_export" $'RUNNABLE\t1'; then
+  pass 'Mongo and AWS executable rows export runnable commands'
 else
-  fail 'Mongo raw snippets and AWS unset rows refuse before resolver or child launch'
+  fail 'Mongo and AWS executable rows export runnable commands'
 fi
 
-# Drive the actual rich-picker key loop with a local fake /dev/tty descriptor
-# and deterministic key reader. `e` and Enter are both ignored for disabled
-# rows; after moving to the second disabled row they remain ignored there too.
-disabled_picker_result="$(
+# Compatibility blocks remain the sole disabled rich-picker state. Drive the
+# key loop with a fake TTY and prove that e and Enter cannot execute such a
+# row, while navigation still works.
+blocked_picker_result="$(
   BASH_GOD_EXECUTION_ROLLOUT_FAKE_TTY="$fake_tty" \
   bash -c '
     . "$1/BASH_GOD.sh" || exit 1
@@ -440,16 +457,16 @@ disabled_picker_result="$(
     }
 
     editor_calls=0
-    _god_menu_select_rich $'"'"'Mongo raw snippet\tcopy only\t\t0\tNeeds an existing mongosh session\nAWS unset\tcopy only\t\t0\tOnly changes the caller shell'"'"' $'"'"'rs.status()\nunset AWS_ACCESS_KEY_ID'"'"' 1
+    _god_menu_select_rich $'"'"'Mongo row\tneeds v2.0+ (have v1.0)\t\t0\nAWS row\taws is not installed\t\t0'"'"' $'"'"'mongo --status\naws sts get-caller-identity'"'"' 1
     status=$?
     printf "%s|%s|%s\\n" "$status" "$_god_menu_choice" "$editor_calls"
   ' _ "$project_dir"
 )"
 
-if [ "$disabled_picker_result" = '0|-1|0' ]; then
-  pass 'copy-only Mongo and AWS rows ignore edit and Enter in the rich picker'
+if [ "$blocked_picker_result" = '0|-1|0' ]; then
+  pass 'compatibility-blocked rows ignore edit and Enter in the rich picker'
 else
-  fail 'copy-only Mongo and AWS rows ignore edit and Enter in the rich picker'
+  fail 'compatibility-blocked rows ignore edit and Enter in the rich picker'
 fi
 
 if [ "$failures" -ne 0 ]; then

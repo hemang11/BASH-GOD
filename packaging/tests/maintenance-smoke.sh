@@ -113,9 +113,23 @@ fi
 assets="$temporary/assets"
 prefix="$temporary/prefix"
 test_home="$temporary/home"
+
+# This test verifies the default HOME-based data paths.  A hosted runner may
+# export XDG variables of its own, so make the child processes use the same
+# deterministic environment as the fixture rather than accidentally testing
+# paths owned by the runner.
+run_in_test_home() {
+  HOME="$test_home" \
+    XDG_CONFIG_HOME='' \
+    XDG_CACHE_HOME='' \
+    XDG_STATE_HOME='' \
+    XDG_DATA_HOME='' \
+    "$@"
+}
+
 mkdir -p "$assets" "$test_home"
 "$repo_dir/packaging/build-runtime.sh" "$assets" >/dev/null || exit 1
-"$repo_dir/packaging/install-runtime.sh" --prefix "$prefix" \
+run_in_test_home "$repo_dir/packaging/install-runtime.sh" --prefix "$prefix" \
   "$assets/bash-god-$version.tar.gz" "$assets/bash-god-$version.tar.gz.sha256" >/dev/null || exit 1
 
 mkdir -p \
@@ -136,7 +150,7 @@ printf 'keep\n' > "$test_home/.config/keep/value"
 
 printf 'unexpected=metadata\n' >> "$prefix/share/bash-god/install-manifest"
 altered_status=0
-HOME="$test_home" bash "$prefix/lib/bash-god/bash_god/maintenance.sh" uninstall "$version" >/dev/null 2>&1 || altered_status=$?
+run_in_test_home bash "$prefix/lib/bash-god/bash_god/maintenance.sh" uninstall "$version" >/dev/null 2>&1 || altered_status=$?
 if [ "$altered_status" -eq 2 ] && [ -x "$prefix/bin/god" ]; then
   pass 'uninstall refuses an inexact ownership manifest'
 else
@@ -145,7 +159,7 @@ fi
 printf 'BASH_GOD_INSTALL_MANIFEST_V1\nmethod=github-release\nprefix=%s\nversion=%s\n' \
   "$(CDPATH= cd "$prefix" && pwd -P)" "$version" > "$prefix/share/bash-god/install-manifest"
 
-cancel_output="$(HOME="$test_home" bash -c '
+cancel_output="$(run_in_test_home bash -c '
   . "$1"
   _god_maintenance_menu() { _god_maintenance_menu_choice=0; }
   _god_maintenance_main uninstall "$2"
@@ -159,7 +173,7 @@ else
   fail 'uninstall defaults to cancellation without changing files'
 fi
 
-purge_output="$(HOME="$test_home" bash -c '
+purge_output="$(run_in_test_home bash -c '
   . "$1"
   _god_maintenance_menu() { _god_maintenance_menu_choice=1; }
   _god_maintenance_main uninstall "$2"

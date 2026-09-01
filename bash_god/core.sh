@@ -250,7 +250,7 @@ _god_print_unknown_group() {
 # ignoring whatever is already cached. A service with no @discover block has
 # nothing to resync; that is not an error, just nothing to do.
 _god_resync_service() {
-  local catalog service status path version synced service_upper cmp
+  local catalog service status path tool version synced service_upper cmp
 
   catalog="$1"
   service="$2"
@@ -269,11 +269,13 @@ _god_resync_service() {
   case "$status" in
     0)
       path="$(_god_discover_path "$service")"
+      tool="$(_god_discover_tool "$service")"
       version="$(_god_discover_version "$service")"
       service_upper="$(printf '%s' "$service" | LC_ALL=C tr '[:lower:]' '[:upper:]')"
 
       _god_banner "${service_upper} RESYNCED" 'Re-probed this machine and updated the cached path and version.'
       printf '  %s%-9s%s %s\n' "$_GOD_DIM" 'Path' "$_GOD_RESET" "$path"
+      [ -z "$tool" ] || printf '  %s%-9s%s %s\n' "$_GOD_DIM" 'Tool' "$_GOD_RESET" "$tool"
       printf '  %s%-9s%s %s\n' "$_GOD_DIM" 'Version' "$_GOD_RESET" "${version:-unknown}"
 
       if [ "${version:-unknown}" = "unknown" ]; then
@@ -300,6 +302,73 @@ _god_resync_service() {
       return 1
       ;;
   esac
+}
+
+# Re-probe every catalog which owns an installed-tool-family discovery block.
+# PATH-only catalogs intentionally do not participate because they have no
+# single tool family or service-version cache to refresh. A missing optional
+# tool is a normal result here, so a whole-machine resync reports it inline
+# and still completes successfully.
+_god_resync_all() {
+  local catalog_files file catalog service probe path tool version total resolved
+
+  if [ -z "$(type -t _god_discover_resolve 2>/dev/null)" ]; then
+    printf 'BASH_GOD: discovery is unavailable in this installation.\n' >&2
+    return 2
+  fi
+
+  catalog_files="$(_god_catalog_files)" || return 2
+  total=0
+  resolved=0
+
+  _god_banner 'BASH_GOD / RESYNC' \
+    'Refreshing catalog-declared tools and their detected service versions.'
+  printf '\n'
+
+  while IFS= read -r file; do
+    _god_is_catalog_file "$file" || continue
+    catalog=$file
+    _god_catalog_has_discover "$catalog" || continue
+    service="$(_god_service_name_for_catalog "$catalog")" || return 2
+    total=$((total + 1))
+
+    if _god_discover_resolve "$service" "$catalog"; then
+      path="$(_god_discover_path "$service")"
+      tool="$(_god_discover_tool "$service")"
+      version="$(_god_discover_version "$service")"
+      if [ -n "$tool" ]; then
+        printf '  %s%-16s%s %s%s%s %s(%s v%s)%s\n' \
+          "$_GOD_ACCENT" "$service" "$_GOD_RESET" \
+          "$_GOD_COMMAND" "$path" "$_GOD_RESET" \
+          "$_GOD_DIM" "$tool" "${version:-unknown}" "$_GOD_RESET"
+      else
+        printf '  %s%-16s%s %s%s%s %s(version %s)%s\n' \
+          "$_GOD_ACCENT" "$service" "$_GOD_RESET" \
+          "$_GOD_COMMAND" "$path" "$_GOD_RESET" \
+          "$_GOD_DIM" "${version:-unknown}" "$_GOD_RESET"
+      fi
+      resolved=$((resolved + 1))
+    else
+      probe="$(_god_catalog_discover_value "$catalog" probe)"
+      printf '  %s%-16s%s %snot found (%s)%s\n' \
+        "$_GOD_ACCENT" "$service" "$_GOD_RESET" \
+        "$_GOD_DIM" "${probe:-tool}" "$_GOD_RESET"
+    fi
+  done <<< "$catalog_files"
+
+  if [ "$total" -eq 0 ]; then
+    printf '  %sNo service in this installation supports automatic path detection.%s\n' \
+      "$_GOD_DIM" "$_GOD_RESET"
+    return 0
+  fi
+
+  printf '\n  %s%d of %d detectable services refreshed.%s\n' \
+    "$_GOD_DIM" "$resolved" "$total" "$_GOD_RESET"
+  if [ "$resolved" -lt "$total" ]; then
+    printf '  %sFor one service, set its configured path and run god SERVICE --resync again.%s\n' \
+      "$_GOD_DIM" "$_GOD_RESET"
+  fi
+  return 0
 }
 
 god() {
@@ -381,6 +450,14 @@ god() {
         return 2
       fi
       _god_print_discovered_paths
+      return $?
+      ;;
+    resync|--resync)
+      if [ "$#" -ne 0 ]; then
+        printf 'BASH_GOD: root --resync does not accept additional arguments.\n' >&2
+        return 2
+      fi
+      _god_resync_all
       return $?
       ;;
     full|--full)

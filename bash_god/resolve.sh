@@ -27,35 +27,43 @@ fi
 # or terminal access.
 # ---------------------------------------------------------------------------
 
-# _god_resolve_rewrite_paths RUN EXECUTION_PATH [DISCOVER_PROBE]
+# _god_resolve_rewrite_paths RUN EXECUTION_PATH [DISCOVER_PROBES] [SELECTED_TOOL]
 #
 # A leading `./tool` becomes `<execution_path>/tool`; `../config/...` is
 # relative to that same bin directory, not the caller's cwd, so it becomes
-# `<execution_path>/../config/...`.  A discovered catalog may keep its native
-# command copyable as a bare `probe` (for example, `kubectl`); when that exact
-# probe is also the first word of a non-LOCAL record, it becomes
-# `<execution_path>/probe`.  No other bare command is rewritten. A record with
-# no execution path (service not resolved, or @mode LOCAL) is returned
-# unchanged.
+# `<execution_path>/../config/...`. A discovered catalog may declare an
+# ordered family of native probes (for example, `mongosh` then legacy `mongo`).
+# A catalog's ordered probe family declares compatible client spellings: when
+# one is the first word of a non-LOCAL record, it becomes the discovered
+# family member at `<execution_path>/selected-tool`. No other bare command is
+# rewritten. A record with no execution path (service not resolved, or @mode
+# LOCAL) is returned unchanged.
 _god_resolve_rewrite_paths() {
-  local run execution_path discover_probe token out
+  local run execution_path discover_probes selected_tool discover_probe token out
   local -a tokens
 
   run=$1
   execution_path=$2
-  discover_probe=${3:-}
+  discover_probes=${3:-}
+  selected_tool=${4:-}
   [ -n "$execution_path" ] || { printf '%s\n' "$run"; return 0; }
 
-  # A probe is grammar-validated as one bare executable file name. Match only
-  # the literal leading command token so words such as `sudo kubectl`, shell
-  # snippets, and every PATH-service command retain their catalog spelling.
-  if [ -n "$discover_probe" ]; then
+  # Probes are grammar-validated bare executable names. A declared probe
+  # family is an explicit catalog assertion that the selected member can run
+  # its client rows, so use that selected member rather than leaking a stale
+  # sibling spelling from the catalog into the caller's PATH.
+  while IFS= read -r discover_probe; do
+    [ -n "$discover_probe" ] || continue
     case "$run" in
       "$discover_probe"|"$discover_probe "*)
-        run="${execution_path}/${discover_probe}${run#"$discover_probe"}"
+        [ -n "$selected_tool" ] || selected_tool=$discover_probe
+        if [ -x "$execution_path/$selected_tool" ]; then
+          run="${execution_path}/${selected_tool}${run#"$discover_probe"}"
+        fi
+        break
         ;;
     esac
-  fi
+  done <<< "$discover_probes"
 
   IFS=' ' read -r -a tokens <<< "$run"
   out=''
@@ -231,13 +239,13 @@ _god_resolve_replace_template_span() {
       single)
         # End the surrounding single quote, expand one positional argument
         # under double quotes, then resume the original single-quoted text.
-        printf -v replacement '%s"%s"%s' "'" "\${$position}" "'"
+        printf -v replacement '%s"${%s}"%s' "'" "$position" "'"
         ;;
       double)
-        printf -v replacement '\${%s}' "$position"
+        printf -v replacement '${%s}' "$position"
         ;;
       *)
-        printf -v replacement '"\${%s}"' "$position"
+        printf -v replacement '"${%s}"' "$position"
         ;;
     esac
     remaining=${remaining#*"$search"}
@@ -351,7 +359,7 @@ _god_resolve_prompt_value() {
 # both, since that text is maintainer-authored, the same trust level as @run.
 _god_resolve_command() {
   local service catalog group entry execution_path query
-  local mode run display template tag discover_probe execution_mode
+  local mode run display template tag discover_probes discovered_tool execution_mode
   local name example meaning span query_words
   local -a param_names param_examples param_spans param_meanings param_keyword_classes param_bound
   local -a name_pool num_pool values
@@ -395,11 +403,16 @@ _god_resolve_command() {
   if [ "$mode" = LOCAL ] || [ "$execution_mode" != DISCOVER ]; then
     execution_path=''
   fi
-  discover_probe=''
+  discover_probes=''
+  discovered_tool=''
   if [ -n "$execution_path" ] && [ "$execution_mode" = DISCOVER ]; then
-    discover_probe="$(_god_catalog_discover_value "$catalog" probe)"
+    discover_probes="$(_god_catalog_discover_probes "$catalog")"
+    if [ -n "$(type -t _god_discover_tool 2>/dev/null)" ]; then
+      discovered_tool="$(_god_discover_tool "$service" 2>/dev/null)"
+    fi
+    [ -n "$discovered_tool" ] || discovered_tool="$(_god_catalog_discover_value "$catalog" probe)"
   fi
-  run="$(_god_resolve_rewrite_paths "$run" "$execution_path" "$discover_probe")"
+  run="$(_god_resolve_rewrite_paths "$run" "$execution_path" "$discover_probes" "$discovered_tool")"
 
   # Catalogs express a slot either as its placeholder example (the original
   # Kafka convention: `topic | <topic_name>`) or as a placeholder name with a

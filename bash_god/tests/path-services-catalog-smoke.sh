@@ -13,7 +13,6 @@ test_dir="$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd -P)" || exit 1
 project_dir="$(CDPATH= cd "$test_dir/../.." 2>/dev/null && pwd -P)" || exit 1
 catalog_module="$project_dir/bash_god/catalog.sh"
 
-elasticsearch_catalog="$project_dir/bash_god/catalog/elasticsearch/service.god"
 general_catalog="$project_dir/bash_god/catalog/general/service.god"
 network_catalog="$project_dir/bash_god/catalog/network/service.god"
 
@@ -83,8 +82,8 @@ catalog_records() {
 # shellcheck source=../catalog.sh
 . "$catalog_module" || exit 1
 
-catalogs=("$elasticsearch_catalog" "$general_catalog" "$network_catalog")
-services=(elasticsearch general network)
+catalogs=("$general_catalog" "$network_catalog")
+services=(general network)
 
 index=0
 while [ "$index" -lt "${#catalogs[@]}" ]; do
@@ -243,14 +242,12 @@ rich_output="$(
       return 0
     }
 
-    _god_search "cluster health" smart list elasticsearch "" 0 || exit $?
     _god_search "current hostname" smart list general "" 0 || exit $?
     _god_search "HTTP response headers" smart list network "" 0
   ' _ "$project_dir"
 )"
 
-if printf '%s\n' "$rich_output" | LC_ALL=C grep -Fq 'OFFER|Show cluster health|curl -sS' && \
-   printf '%s\n' "$rich_output" | LC_ALL=C grep -Fq 'OFFER|Show the current hostname|hostname' && \
+if printf '%s\n' "$rich_output" | LC_ALL=C grep -Fq 'OFFER|Show the current hostname|hostname' && \
    printf '%s\n' "$rich_output" | LC_ALL=C grep -Fq 'OFFER|Show HTTP response headers|curl -sS -I <url>' && \
    [ ! -s "$native_log" ] && [ ! -s "$discovery_log" ]; then
   pass 'PATH catalogs reach a fake-TTY rich offer without discovery or native execution'

@@ -146,13 +146,13 @@ fi
 aws_unset="$(_god_catalog_command_export "$aws_catalog" imds 3)"
 aws_imdsv2="$(_god_catalog_command_export "$aws_catalog" imds 2)"
 k8s_events="$(_god_catalog_command_export "$k8s_catalog" events 1)"
-if has_exact_line "$aws_unset" $'RUNNABLE\t0' && \
+if has_exact_line "$aws_unset" $'RUNNABLE\t1' && \
    has_exact_line "$aws_unset" $'SINCE\t0.0' && \
    has_exact_line "$aws_imdsv2" $'RUNNABLE\t1' && \
    has_exact_line "$k8s_events" $'SINCE\t1.28'; then
-  pass 'copy-only shell state and per-command compatibility metadata export correctly'
+  pass 'all AWS rows are runnable and per-command compatibility metadata exports correctly'
 else
-  fail 'copy-only shell state and per-command compatibility metadata export correctly'
+  fail 'all AWS rows are runnable and per-command compatibility metadata exports correctly'
 fi
 
 if [ "$failures" -ne 0 ]; then

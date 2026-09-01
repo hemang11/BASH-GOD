@@ -160,7 +160,7 @@ _god_execute_resolved() {
 # the complete resolved command has been on screen.
 _god_execute_command() {
   local service catalog group entry execution_path query reviewed tab
-  local run risk runnable notes tag value display template resolved resolve_status
+  local run risk tag value display template resolved resolve_status
   local -a values
 
   service=$1
@@ -174,22 +174,13 @@ _god_execute_command() {
 
   run=''
   risk=''
-  runnable=1
-  notes=''
   while IFS="$tab" read -r tag value; do
     case "$tag" in
       RUN) run=$value ;;
       RISK) risk=$value ;;
-      RUNNABLE) runnable=$value ;;
-      NOTES) notes=$value ;;
     esac
   done < <(_god_catalog_command_export "$catalog" "$group" "$entry")
   [ -n "$run" ] || return 2
-  if [ "$runnable" != 1 ]; then
-    printf 'BASH_GOD: this command is copy-only and cannot be launched from the picker.\n' >&2
-    [ -z "$notes" ] || printf '%s\n' "$notes" >&2
-    return 2
-  fi
 
   display=''
   template=''
