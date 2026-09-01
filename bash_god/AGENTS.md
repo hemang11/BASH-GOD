@@ -299,7 +299,10 @@ special-case dispatcher branch.
 | top-level `@description` | Once per file | Concise scope of the entire catalog. Must precede every group. |
 | top-level `@discover` | Optional, once per file | Discovers one installed tool family through `probe`/`root`/`scan`/`version`; mutually exclusive with `@execution PATH`; must precede every group. |
 | top-level `@execution PATH` | Optional, once per file | Opts a multi-tool catalog into the reviewed picker using the caller's PATH; mutually exclusive with `@discover`; must precede every group. |
-| top-level `@synced <version>` | Optional, once per discovery catalog | Dotted version the catalog was last verified against. Warns only, never filters. Must precede every group. |
+| top-level `@connection NONE` | Every executable catalog | Explicitly declares that commands are local or individually parameterized and need no shared service target. |
+| top-level `@connection ENDPOINT <port>` | Every endpoint catalog | Declares a TCP service target and its usual local-listener port; `--resync` may cache a non-secret `host:port` candidate. |
+| top-level `@connection CONTEXT` | Every context catalog | Declares a client-managed context such as kubeconfig or AWS profile/region rather than a host:port target. |
+| top-level `@synced <version>` | Optional, once per discovery catalog | Dotted version the catalog was last verified against. `god --paths` renders it once per service; it never filters or annotates individual commands. |
 | `@group <name>` | Yes | Exact navigable group route. |
 | `@command <title>` | Per record | Unique, human-readable operation title within the group. |
 | `@mode <mode>` | Per record | Compatibility/context metadata; see accepted values below. |
@@ -327,7 +330,7 @@ Modes remain searchable metadata. The terminal keeps normal modes quiet and visi
 `LEGACY-ZK` as `[LEGACY]`. `LOCAL` also exempts a record from path resolution and version filtering.
 Do not invent another mode without updating validation, rendering, tests, and this guide together.
 
-## Execution Metadata (`@discover`, `@execution PATH`, `@synced`, `@since`, `@until`, `@intent`)
+## Execution Metadata (`@discover`, `@execution PATH`, `@connection`, `@synced`, `@since`, `@until`, `@intent`)
 
 These directives make a service executable rather than display-only. `@discover` is for one installed
 tool family; `@execution PATH` is for an intentional collection of host tools. Both use the same
@@ -344,6 +347,8 @@ root | /opt/kafka/bin | Common install layout
 scan | /opt | Bounded scan root when the common layout is absent
 version | kafka-topics.sh --version | Prints the installed version
 
+@connection ENDPOINT 9092
+
 @synced 3.9
 ```
 
@@ -358,9 +363,9 @@ version | kafka-topics.sh --version | Prints the installed version
   `<probe>` when it must use the selected probe-family member. It may query the service through that
   client (for example, Elasticsearch through curl); cache the service version, not the helper
   client's version.
-- `@synced <version>` is service-level and records what the catalog was last verified against. It
-  only ever produces a caution line — it never hides a record. Do not use it as a stand-in for
-  `@until` on individual records.
+- `@synced <version>` is service-level and records what the catalog was last verified against.
+  `god --paths` shows it once as `Catalog reviewed through`; it never annotates, hides, or blocks a
+  record. Do not use it as a stand-in for `@until` on individual records.
 
 `@execution PATH` is a single top-level marker, placed before all groups. It does not have a
 `@discover` block, a resolved product directory, or a product version axis: the catalog's command
@@ -371,6 +376,24 @@ Every record in an executable catalog must be a real command that can run in BAS
 Express raw client code through the client's command-line form (for example, a MongoDB shell
 `--eval` command), and express useful shell-state checks as a one-command operation. Do not add a
 non-executable record marker: service resolution decides whether the rich picker is available.
+
+Every executable catalog declares exactly one connection model:
+
+- `@connection NONE` is required for local and PATH command catalogs such as general and network.
+  Commands may still prompt for one-off destinations, but no service target is cached.
+- `@connection ENDPOINT <port>` is for Kafka, MongoDB, Elasticsearch, and similar client/server
+  catalogs. On explicit `god SERVICE --resync`, the shared engine prefers a non-secret
+  `target=host:port` user override in `~/.config/bash-god/SERVICE.conf`; otherwise it may cache one
+  concrete local listener at the declared port. `god --paths` prints only `Target: host:port` or
+  `Target: unresolved`. The discovered target rewrites the catalog's exact `localhost:<port>`
+  default in the reviewed runtime model only; static catalog text stays copy-ready. Do not put a
+  credential-bearing URI in `target=`.
+- `@connection CONTEXT` is for client-managed destinations such as Kubernetes kubeconfig or AWS
+  profile/region. It deliberately has no invented hostname or port.
+
+A bare service dashboard does not probe for a client or a target. After an explicit resync records a
+missing client, it may add one dim line directing the operator to `god SERVICE --resync`; it never
+claims that a target was checked when the client was unavailable.
 
 Per-command `@since <version>` and `@until <version>` state the range a record is known to be valid
 for. Every record in a catalog with `@discover` must declare `@since`; the validator rejects the
@@ -598,9 +621,10 @@ Current limitations:
 - correctness of a native command still depends on the installed CLI version and environment;
 - BASH_GOD deliberately does not validate a displayed command by running it — the confirm step is
   the user's own validation, not an automated one;
-- execution is generic for catalogs declaring `@discover` or `@execution PATH`; a discoverable
-  service without a fresh resolved path and a catalog with neither marker keep the static,
-  copy-ready result view.
+- execution is generic for catalogs declaring `@discover` or `@execution PATH`; every executable
+  catalog declares `@connection NONE`, `@connection ENDPOINT <port>`, or `@connection CONTEXT`.
+  A discoverable service without a fresh resolved path and a catalog with neither marker keep the
+  static, copy-ready result view.
 
 ## Definition of Done
 

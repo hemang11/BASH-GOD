@@ -77,6 +77,23 @@ _god_resolve_rewrite_paths() {
   printf '%s\n' "$out"
 }
 
+# _god_resolve_rewrite_endpoint RUN TARGET PORT
+#
+# Catalog text stays copyable with localhost:<port>. Once explicit resync has
+# cached an endpoint authority, only the reviewed runtime model rewrites that
+# exact default. This deliberately does not rewrite arbitrary hosts, URLs, or
+# user-provided values.
+_god_resolve_rewrite_endpoint() {
+  local run target port default_target
+
+  run=$1
+  target=$2
+  port=$3
+  [ -n "$target" ] && [ -n "$port" ] || { printf '%s\n' "$run"; return 0; }
+  default_target="localhost:$port"
+  printf '%s\n' "${run//"$default_target"/$target}"
+}
+
 # _god_resolve_harvest QUERY
 #
 # What ranking ignores: quoted phrases and ALL_CAPS/underscored words are
@@ -392,7 +409,7 @@ _god_resolve_prompt_value() {
 # both, since that text is maintainer-authored, the same trust level as @run.
 _god_resolve_command() {
   local service catalog group entry execution_path query
-  local mode run display template tag discover_probes discovered_tool execution_mode
+  local mode run display template tag discover_probes discovered_tool execution_mode connection_kind connection_port target
   local name example meaning span query_words placeholder documented_span covered
   local -a param_names param_examples param_spans param_meanings param_keyword_classes param_bound
   local -a name_pool num_pool values
@@ -446,6 +463,13 @@ _god_resolve_command() {
     [ -n "$discovered_tool" ] || discovered_tool="$(_god_catalog_discover_value "$catalog" probe)"
   fi
   run="$(_god_resolve_rewrite_paths "$run" "$execution_path" "$discover_probes" "$discovered_tool")"
+  connection_kind="$(_god_catalog_connection_kind "$catalog")"
+  if [ "$mode" != LOCAL ] && [ "$connection_kind" = ENDPOINT ] && \
+     [ -n "$(type -t _god_discover_target 2>/dev/null)" ]; then
+    connection_port="$(_god_catalog_connection_port "$catalog")"
+    target="$(_god_discover_target "$service" 2>/dev/null)"
+    run="$(_god_resolve_rewrite_endpoint "$run" "$target" "$connection_port")"
+  fi
 
   # Catalogs express a slot either as its placeholder example (the original
   # Kafka convention: `topic | <topic_name>`) or as a placeholder name with a

@@ -12,6 +12,8 @@ root | /usr/bin | System curl location on common macOS and Linux installations
 scan | /usr | Bounded fallback for a system curl outside the standard bin directory
 version | <probe> -fsS --connect-timeout 1 --max-time 2 http://localhost:9200/ | Reads the local Elasticsearch root endpoint version without changing state
 
+@connection ENDPOINT 9200
+
 
 @group service
 

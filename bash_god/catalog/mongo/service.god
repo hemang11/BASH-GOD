@@ -17,6 +17,8 @@ root | /usr/local/bin | Common Unix package-manager bin directory
 scan | /opt | Bounded scan root for package-managed MongoDB Shell installations
 version | <probe> --version | Reads the selected shell client version without connecting to a deployment
 
+@connection ENDPOINT 27017
+
 
 @group service
 

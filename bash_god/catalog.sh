@@ -210,6 +210,28 @@ _god_validate_catalog() {
       next
     }
 
+    !in_command && /^@connection([[:space:]]|$)/ {
+      if (group_count > 0) fail("@connection must appear before all groups")
+      if (seen_connection) fail("duplicate @connection")
+      connection = $0
+      sub(/^@connection[[:space:]]*/, "", connection)
+      connection_count = split(connection, connection_parts, /[[:space:]]+/)
+      connection_kind = connection_parts[1]
+      if (connection_kind !~ /^(NONE|ENDPOINT|CONTEXT)$/) {
+        fail("@connection must be NONE, ENDPOINT <port>, or CONTEXT")
+      } else if (connection_kind == "ENDPOINT") {
+        if (connection_count != 2 || connection_parts[2] !~ /^[0-9]+$/ || connection_parts[2] + 0 < 1 || connection_parts[2] + 0 > 65535) {
+          fail("@connection ENDPOINT requires one TCP port from 1 through 65535")
+        }
+      } else if (connection_count != 1) {
+        fail("@connection " connection_kind " does not accept a value")
+      }
+      seen_connection = 1
+      in_catalog_description = 0
+      in_discover = 0
+      next
+    }
+
     !in_command && /^@synced[[:space:]]+/ {
       if (group_count > 0) fail("@synced must appear before all groups")
       if (seen_synced) fail("duplicate @synced")
@@ -419,6 +441,8 @@ _god_validate_catalog() {
       else if (!catalog_description_has_content) fail("empty catalog @description")
       if (seen_discover && !discover_probe_count) fail("@discover has no probe row")
       if (seen_discover && !discover_root) fail("@discover has no root row")
+      if ((seen_discover || seen_execution) && !seen_connection) fail("executable catalog is missing @connection")
+      if (seen_connection && !seen_discover && !seen_execution) fail("@connection requires @discover or @execution PATH")
       if (previous_group != "" && group_command_count == 0) fail("group \"" previous_group "\" has no commands")
       if (command_count == 0) fail("no command blocks found")
       exit(errors ? 1 : 0)
@@ -492,6 +516,40 @@ _god_catalog_execution_mode() {
 
 _god_catalog_has_execution() {
   [ -n "$(_god_catalog_execution_mode "$1")" ]
+}
+
+# _god_catalog_connection_kind FILE
+#
+# Every executable catalog declares the kind of target context its commands
+# use. NONE is intentionally explicit for local/PATH tools, ENDPOINT carries
+# one default TCP port, and CONTEXT is for client-managed contexts such as
+# kubeconfig or AWS profile/region.
+_god_catalog_connection_kind() {
+  LC_ALL=C awk '
+    /^@connection[[:space:]]+/ {
+      value = $0
+      sub(/^@connection[[:space:]]+/, "", value)
+      split(value, parts, /[[:space:]]+/)
+      print parts[1]
+      exit
+    }
+  ' "$1"
+}
+
+# _god_catalog_connection_port FILE
+#
+# Prints the catalog-declared local listener port for an ENDPOINT connection,
+# or nothing for NONE and CONTEXT catalogs.
+_god_catalog_connection_port() {
+  LC_ALL=C awk '
+    /^@connection[[:space:]]+ENDPOINT[[:space:]]+/ {
+      value = $0
+      sub(/^@connection[[:space:]]+ENDPOINT[[:space:]]+/, "", value)
+      split(value, parts, /[[:space:]]+/)
+      print parts[1]
+      exit
+    }
+  ' "$1"
 }
 
 # _god_catalog_discover_value FILE KEY

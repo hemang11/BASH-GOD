@@ -38,9 +38,9 @@ display-only and needs no execution bookkeeping.
    one-command check.
 
 4. **Bump `@synced <version>`** at the top of the catalog to the version you verified this pass
-   against. This is the only field this whole runbook exists to keep current. It is a caution line
-   for users on a newer version, never a filter — do not rely on it to hide anything; use `@until` on
-   the specific records that actually broke.
+   against. This is the only field this whole runbook exists to keep current. `god --paths` shows it
+   once as the service's catalog-review version; it never filters or labels individual rows. Use
+   `@until` on the specific records that actually broke.
 
 5. **Validate and test**:
 
@@ -67,8 +67,8 @@ display-only and needs no execution bookkeeping.
 ## What you are not doing
 
 - Not writing code. `discover.sh`, `resolve.sh`, and `execute.sh` are generic and version-neutral;
-  they read `@discover`/`@execution PATH` and per-record metadata as plain catalog facts. A sync
-  pass never adds a service-specific execution branch.
+  they read `@discover`/`@execution PATH`, `@connection`, and per-record metadata as plain catalog
+  facts. A sync pass never adds a service-specific execution branch.
 - Not touching `probe`/`root`/`scan` in `@discover` unless the native install layout itself changed
   (a new default directory, a renamed binary) — that is a separate, much rarer edit from a version
   bump.

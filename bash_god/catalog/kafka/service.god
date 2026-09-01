@@ -13,6 +13,8 @@ root | /opt/kafka/bin | Common Kafka install layout
 scan | /opt | Bounded scan root when the common layout is absent
 version | kafka-topics.sh --version 2>/dev/null; [ $? -ne 0 ] && { f=$(echo ../libs/kafka_*.jar); v=${f##*-}; echo ${v%.jar}; } | Kafka >=2.4 prints the version directly; older builds have no --version flag, so this falls back to the version embedded in the libs/kafka_<scala>-<version>.jar filename
 
+@connection ENDPOINT 9092
+
 @synced 3.9
 
 
@@ -96,15 +98,15 @@ Shows Kafka JVM processes and their launch arguments.
 pgrep -af 'kafka.Kafka|Kafka'
 @end
 
-@command Check whether the Kafka listener port is open
+@command Find the local Kafka broker listener
 @mode LOCAL
 @since 0.0
 @description
-Shows the process listening on the usual Kafka broker port.
+Shows the local address accepting Kafka broker TCP connections on the usual port.
 @run
-ss -ltnp | grep ':9092'
+ss -ltn 'sport = :9092'
 @params
-PORT | 9092 | Broker listener port from server.properties
+PORT | 9092 | Usual Kafka broker TCP port
 @end
 
 @command Show recent Kafka service logs

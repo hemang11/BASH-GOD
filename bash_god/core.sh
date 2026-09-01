@@ -13,7 +13,7 @@ fi
 
 _BASH_GOD_CORE_DIR="$(CDPATH= cd "$(dirname "$_BASH_GOD_CORE_FILE")" 2>/dev/null && pwd -P)"
 _BASH_GOD_CATALOG_DIR="$_BASH_GOD_CORE_DIR/catalog"
-_BASH_GOD_VERSION='0.0.2.4.1'
+_BASH_GOD_VERSION='0.0.2.4.2'
 _BASH_GOD_LICENSE='MIT'
 unset _BASH_GOD_CORE_FILE
 
@@ -250,7 +250,7 @@ _god_print_unknown_group() {
 # ignoring whatever is already cached. A service with no @discover block has
 # nothing to resync; that is not an error, just nothing to do.
 _god_resync_service() {
-  local catalog service status path tool version synced service_upper cmp
+  local catalog service status path tool version synced service_upper cmp connection_kind target
 
   catalog="$1"
   service="$2"
@@ -273,10 +273,15 @@ _god_resync_service() {
       version="$(_god_discover_version "$service")"
       service_upper="$(printf '%s' "$service" | LC_ALL=C tr '[:lower:]' '[:upper:]')"
 
-      _god_banner "${service_upper} RESYNCED" 'Re-probed this machine and updated the cached path and version.'
+      _god_banner "${service_upper} RESYNCED" 'Re-probed this machine and refreshed client details and, where applicable, its target.'
       printf '  %s%-9s%s %s\n' "$_GOD_DIM" 'Path' "$_GOD_RESET" "$path"
       [ -z "$tool" ] || printf '  %s%-9s%s %s\n' "$_GOD_DIM" 'Tool' "$_GOD_RESET" "$tool"
       printf '  %s%-9s%s %s\n' "$_GOD_DIM" 'Version' "$_GOD_RESET" "${version:-unknown}"
+      connection_kind="$(_god_catalog_connection_kind "$catalog")"
+      if [ "$connection_kind" = ENDPOINT ]; then
+        target="$(_god_discover_target "$service" 2>/dev/null)"
+        printf '  %s%-9s%s %s\n' "$_GOD_DIM" 'Target' "$_GOD_RESET" "${target:-unresolved}"
+      fi
 
       if [ "${version:-unknown}" = "unknown" ]; then
         printf '\n  %sCould not read a version number from this install; search will show every variant, unfiltered.%s\n' \
@@ -285,7 +290,7 @@ _god_resync_service() {
         synced="$(_god_catalog_synced "$catalog" 2>/dev/null)"
         if [ -n "$synced" ]; then
           cmp="$(_god_version_compare "$version" "$synced")"
-          if [ "$cmp" != 0 ]; then
+          if [ "$cmp" -gt 0 ]; then
             printf '\n  %sHeads up%s : Catalog was last checked against %s %s; You are running %s %s. Flags may differ — see %sgod %s native%s\n' \
               "$_GOD_WARNING" "$_GOD_RESET" "$service" "$synced" "$service" "$version" "$_GOD_COMMAND" "$service" "$_GOD_RESET"
           fi
@@ -322,7 +327,7 @@ _god_resync_all() {
   resolved=0
 
   _god_banner 'BASH_GOD / RESYNC' \
-    'Refreshing catalog-declared tools and their detected service versions.'
+    'Refreshing catalog-declared tools, detected versions, and endpoint targets where applicable.'
   printf '\n'
 
   while IFS= read -r file; do

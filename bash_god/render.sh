@@ -28,7 +28,7 @@ _god_print_available_services() {
 # whether that resolution is still fresh. PATH-execution services deliberately
 # do not appear because they have no single product directory to report.
 _god_print_discovered_paths() {
-  local catalog_files file service catalog path version printed
+  local catalog_files file service catalog path version synced connection_kind target printed
 
   if [ -z "$(type -t _god_discover_path 2>/dev/null)" ]; then
     printf 'BASH_GOD: discovery is unavailable in this installation.\n' >&2
@@ -37,7 +37,7 @@ _god_print_discovered_paths() {
 
   catalog_files="$(_god_catalog_files)" || return 2
   printed=1
-  _god_banner 'DISCOVERED PATHS' 'Executable services BASH_GOD can detect and the directories they use.'
+  _god_banner 'DISCOVERED PATHS' 'Resolved clients, review versions, and service targets.'
   printf '\n'
 
   while IFS= read -r file; do
@@ -57,13 +57,40 @@ _god_print_discovered_paths() {
       printf '  %s%-16s%s %s%s%s (stale)   %sgod %s --resync%s\n' \
         "$_GOD_ACCENT" "$service" "$_GOD_RESET" "$_GOD_WARNING" "$path" "$_GOD_RESET" "$_GOD_COMMAND" "$service" "$_GOD_RESET"
     else
-      printf '  %s%-16s%s %s (version %s)\n' "$_GOD_ACCENT" "$service" "$_GOD_RESET" "$path" "${version:-unknown}"
+      printf '  %s%-16s%s %s\n' "$_GOD_ACCENT" "$service" "$_GOD_RESET" "$path"
+    fi
+    printf '  %s%-16s%s CLI version: %s\n' "$_GOD_DIM" '' "$_GOD_RESET" "${version:-unknown}"
+    synced="$(_god_catalog_synced "$catalog" 2>/dev/null)"
+    printf '  %s%-16s%s Catalog reviewed through: %s\n' \
+      "$_GOD_DIM" '' "$_GOD_RESET" "${synced:-not recorded}"
+    connection_kind="$(_god_catalog_connection_kind "$catalog")"
+    if [ "$connection_kind" = ENDPOINT ]; then
+      target="$(_god_discover_target "$service" 2>/dev/null)"
+      printf '  %s%-16s%s Target: %s\n' "$_GOD_DIM" '' "$_GOD_RESET" "${target:-unresolved}"
     fi
   done <<< "$catalog_files"
 
   if [ "$printed" -eq 1 ]; then
     printf '  %sNo executable service supports automatic path detection yet.%s\n' "$_GOD_DIM" "$_GOD_RESET"
   fi
+}
+
+# A bare service dashboard never probes the machine. Only an explicit resync
+# may record a missing client, and only then should the dashboard explain why
+# it remains static instead of waiting for a rich execution picker.
+_god_print_service_execution_note() {
+  local catalog service execution_mode path resolution
+
+  catalog=$1
+  service=$2
+  execution_mode="$(_god_catalog_execution_mode "$catalog")"
+  [ "$execution_mode" = DISCOVER ] || return 0
+  path="$(_god_discover_path "$service" 2>/dev/null)"
+  [ -z "$path" ] || return 0
+  resolution="$(_god_discover_resolution "$service" 2>/dev/null)"
+  [ "$resolution" = missing ] || return 0
+  printf '\n  %s%s client not found on this machine · run %sgod %s --resync%s\n' \
+    "$_GOD_DIM" "$service" "$_GOD_COMMAND" "$service" "$_GOD_RESET"
 }
 
 _god_print_view_key_rows() {
@@ -152,6 +179,7 @@ _god_print_service_help() {
   command_count="${counts#* }"
 
   _god_banner "$banner_title" "$command_count commands across $group_count groups - curated, searchable, never executed."
+  _god_print_service_execution_note "$catalog" "$service"
   _god_section 'GROUP MAP'
   printf '%s  %-32s %5s  %s%s\n' "$_GOD_DIM" 'OPEN' 'COUNT' 'START WITH' "$_GOD_RESET"
   printf '%s  %-32s %5s  %s%s\n' "$_GOD_DIM" '--------------------------------' '-----' '----------------------------------------' "$_GOD_RESET"

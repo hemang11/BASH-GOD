@@ -142,7 +142,8 @@ bash_god/
 - `maintenance.sh` owns cached direct-GitHub update checks and complete BASH_GOD removal. It runs in
   a dedicated Bash process and never receives catalog command text.
 - `catalog.sh` owns catalog discovery, service-route resolution, and grammar validation.
-- `discover.sh` owns generic discoverable-tool resolution, version capture, and its cache.
+- `discover.sh` owns generic discoverable-tool resolution, version capture, endpoint-candidate
+  resolution, and their cache.
 - `art.sh` owns the pre-rendered six-line identity and its TTY gate; sourcing it is silent and only
   bare `god` may render it.
 - `render.sh` owns normal root, service, group, and command views.
@@ -180,6 +181,8 @@ root | /opt/kafka/bin | Common install layout
 scan | /opt | Bounded scan root when the common layout is absent
 version | kafka-topics.sh --version | Prints the installed version
 
+@connection ENDPOINT 9092
+
 @synced 3.9
 
 @group offset
@@ -205,8 +208,12 @@ Rules:
 - An optional top-level `@discover` block (probe/root/scan/version rows) marks one discovered tool
   family executable. `@execution PATH` marks a multi-tool PATH catalog executable. They are mutually
   exclusive, must appear before all groups, and a catalog with neither stays display-only.
+- Every executable catalog declares `@connection NONE`, `@connection ENDPOINT <port>`, or
+  `@connection CONTEXT`. `NONE` has no shared target, `ENDPOINT` permits one cached non-secret
+  `host:port` candidate, and `CONTEXT` represents client-managed state such as kubeconfig or AWS
+  profile/region.
 - An optional top-level `@synced VERSION` records which version the catalog was last verified
-  against. It only ever warns; it never filters.
+  against. `god --paths` renders it once per service; it never filters or annotates a command row.
 - Every `@group NAME` creates an exact navigable group route.
 - Every `@command TITLE` requires `@mode`, non-empty `@description`, and exactly one physical `@run` line.
   In a catalog with `@discover`, every command also requires `@since VERSION`; service-neutral local
@@ -339,8 +346,7 @@ range after scoring. Out-of-range matches stay in their relevance position, show
 or last-supported version, and cannot be run or edited. `@intent` twins identify the preferred
 in-range form without a service-level compatibility summary. A service with no detected version, or
 no `@discover` block, applies no version policy. `--all-versions` exposes every variant but does not
-make an incompatible row executable; `@synced` never filters, only warns when the detected version
-exceeds it.
+make an incompatible row executable; `@synced` remains service-level review metadata in `god --paths`.
 
 ### Execution (generic, 0.0.2.4.1)
 
@@ -349,11 +355,15 @@ service, at any scope — those routes only ever render text. Only the plain `q`
 view key, on a TTY, offers to run a result:
 
 1. **Determine capability.** `@discover` resolves the declared probe against its declared root,
-   then PATH, then a bounded scan, caching the directory and version. A search makes only a cheap
-   freshness check; `god SERVICE --resync` forces a fresh probe and `god --paths` lists discovered
-   directories. `@execution PATH` intentionally has no discovery or product version: its commands
-   retain their catalog spelling and use the caller's PATH. An unresolved discovery catalog, a catalog
-   with neither marker, or an unusable terminal retains the static `MATCHING OPERATIONS` table.
+   then PATH, then a bounded scan, caching the directory and version. During explicit
+   `god SERVICE --resync` only, an `ENDPOINT` catalog also prefers a non-secret
+   `target=host:port` override and otherwise may cache a concrete local listener at its declared
+   port. A search makes only a cheap client-path freshness check; it never probes for a target.
+   `god --paths` lists the resolved client, detected version, catalog review version, and—only for
+   resolved endpoint catalogs—`Target: host:port` or `Target: unresolved`. `@execution PATH`
+   intentionally has no discovery or product version: its commands retain their catalog spelling and
+   use the caller's PATH. An unresolved discovery catalog, a catalog with neither marker, or an
+   unusable terminal retains the static `MATCHING OPERATIONS` table.
 2. A capable result opens one **in-place interactive picker**: the caller's terminal keeps the
    BASH_GOD-framed search title and subtitle, the list contains compact titles, and the highlighted
    title owns a word-wrapped `$ <resolved command>` panel. It never enters an alternate terminal
@@ -362,7 +372,8 @@ view key, on a TTY, offers to run a result:
    reader may use a bare `perl` executable, but never an optional Perl module.
 3. **Resolve and execute** (`bash_god/resolve.sh`, `bash_god/execute.sh`) safely prepare each selected
    command. A discovered catalog may rewrite a declared leading client spelling to its cached,
-   catalog-declared probe-family member at the resolved absolute path; static catalog text remains
+   catalog-declared probe-family member at the resolved absolute path. An endpoint target may replace
+   only the exact catalog default `localhost:<port>` in that reviewed model; static catalog text remains
    copyable. `@params` become positional argument slots, including
    values embedded inside quoted URLs or JSON, so query/config/prompt values never become shell syntax.
    Any remaining placeholder is prompted only after selection in the same terminal flow. Native stdout

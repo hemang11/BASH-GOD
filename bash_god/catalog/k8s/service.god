@@ -12,6 +12,8 @@ root | /usr/local/bin | Common manual and Intel Homebrew install directory
 scan | /opt/homebrew | Bounded fallback for the Apple Silicon Homebrew layout
 version | kubectl version --client | Prints only the client version and never contacts a cluster
 
+@connection CONTEXT
+
 @synced 1.37
 
 

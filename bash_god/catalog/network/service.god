@@ -7,6 +7,8 @@ command through tools on PATH.
 
 @execution PATH
 
+@connection NONE
+
 
 @group interfaces
 

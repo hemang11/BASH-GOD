@@ -7,6 +7,8 @@ edit, and explicitly run a selected command through tools on PATH.
 
 @execution PATH
 
+@connection NONE
+
 
 @group host
 

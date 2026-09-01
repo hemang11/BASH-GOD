@@ -20,9 +20,10 @@ Stop searching Slack, old notes, and shell history for the command you used six 
 BASH_GOD keeps curated DevOps commands in a searchable local catalog. It shows you what to run, what it does, and what each parameter means. It never runs anything you have not seen and approved.
 
 > BASH_GOD shows you the resolved command and runs it only after you confirm. Discoverable services
-> resolve their installed tool family and version; PATH services use the same reviewed picker through
-> your normal shell lookup. Every catalog command remains copy-ready, and native CLIs remain the
-> source of truth.
+> resolve their installed tool family and version; endpoint-based services can also resolve a local
+> or explicitly configured target during `god --resync`. PATH services use the same reviewed picker
+> through your normal shell lookup. Every catalog command remains copy-ready, and native CLIs remain
+> the source of truth.
 
 ## See it in action
 
@@ -137,10 +138,13 @@ Every service owns one plain-text catalog. The same records power browsing, sear
 Catalog files are parsed as data; the file itself is never sourced or evaluated as code. A service
 that declares `@discover` runs only after its tool family resolves. Its detected native version is
 checked against each command's declared support range, so incompatible rows show why beside their
-title and remain copy-ready but cannot be edited or run. A service that declares `@execution PATH`
-uses the same reviewed picker through normal PATH lookup. In both cases, the value of a confirmed
-`@run` line is passed as an argument-safe template—never before you have seen and approved it.
-Catalogs without either marker stay display-only.
+title and remain copy-ready but cannot be edited or run. Each executable catalog also declares a
+connection model: local/none, endpoint, or client-managed context. During `god SERVICE --resync`,
+an endpoint catalog can cache an explicit non-secret `host:port` target or a concrete local listener;
+`god --paths` shows the resolved client, catalog review version, and target. A service that declares
+`@execution PATH` uses the same reviewed picker through normal PATH lookup. In every case, the value
+of a confirmed `@run` line is passed as an argument-safe template—never before you have seen and
+approved it. Catalogs without either marker stay display-only.
 
 ## Add your own command
 

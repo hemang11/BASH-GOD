@@ -166,6 +166,7 @@ printf '%s\n' \
   '@discover' \
   'probe | fixture.sh | Fixture probe' \
   'root | /tmp | Fixture root' \
+  '@connection NONE' \
   '@group demo' \
   '@command Missing compatibility floor' \
   '@mode LOCAL' \
@@ -198,6 +199,21 @@ else
   fail 'every executable-service command requires an explicit compatibility floor'
 fi
 
+connection_contract_output="$(bash -c '
+  . "$1"
+  shift
+  for catalog in "$@"; do
+    printf "%s\\t%s\\t%s\\n" "${catalog##*/catalog/}" "$(_god_catalog_connection_kind "$catalog")" "$(_god_catalog_connection_port "$catalog")"
+  done
+' _ "$catalog_module" "$kafka_catalog" "$mongo_catalog" "$k8s_catalog" "$aws_catalog" "$elasticsearch_catalog" "$general_catalog" "$network_catalog")"
+connection_contract_output="$(printf '%s\n' "$connection_contract_output" | LC_ALL=C sed 's|/service.god||')"
+expected_connection_contract=$'kafka\tENDPOINT\t9092\nmongo\tENDPOINT\t27017\nk8s\tCONTEXT\t\naws\tCONTEXT\t\nelasticsearch\tENDPOINT\t9200\ngeneral\tNONE\t\nnetwork\tNONE\t'
+if [ "$connection_contract_output" = "$expected_connection_contract" ]; then
+  pass 'every executable catalog declares an explicit connection context'
+else
+  fail 'every executable catalog declares an explicit connection context'
+fi
+
 output="$(GOD_COLOR=never "$god_cli")"
 paths_output="$(GOD_COLOR=never "$god_cli" --paths)"
 home_identity="BASH_GOD  v$expected_version  •  MIT License"
@@ -217,11 +233,119 @@ else
 fi
 
 if contains "$paths_output" 'DISCOVERED PATHS' && \
-   contains "$paths_output" 'Executable services BASH_GOD can detect and the directories they use.' && \
+   contains "$paths_output" 'Resolved clients, review versions, and service targets.' && \
    not_contains "$paths_output" '@discover'; then
   pass 'resolved-path view uses operator language instead of catalog grammar'
 else
   fail 'resolved-path view uses operator language instead of catalog grammar'
+fi
+
+paths_metadata_output="$(GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  fixture_catalog_file=$2
+  _god_catalog_files() { printf "%s\n" "$fixture_catalog_file"; }
+  _god_discover_path() { printf "/fixtures/kafka\n"; }
+  _god_discover_version() { printf "3.9.2\n"; }
+  _god_discover_target() { printf "10.24.12.7:9092\n"; }
+  _god_discover_is_stale() { return 1; }
+  _god_print_discovered_paths
+' _ "$project_dir" "$kafka_catalog")"
+if contains "$paths_metadata_output" 'kafka            /fixtures/kafka' && \
+   contains "$paths_metadata_output" 'CLI version: 3.9.2' && \
+   contains "$paths_metadata_output" 'Catalog reviewed through: 3.9' && \
+   contains "$paths_metadata_output" 'Target: 10.24.12.7:9092' && \
+   not_contains "$paths_metadata_output" 'not verified on'; then
+  pass 'paths owns catalog review and resolved endpoint context'
+else
+  fail 'paths owns catalog review and resolved endpoint context'
+fi
+
+target_fixture_bin="$smoke_home/target-fixture/bin"
+target_fixture_catalog="$smoke_home/target-fixture.god"
+mkdir -p "$target_fixture_bin" || exit 1
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'if [ "$1" = --version ] && [ "$2" = --bootstrap-server ] && [ "$3" = 10.24.12.7:9092 ]; then' \
+  '  printf "fixture 1.0\n"' \
+  '  exit 0' \
+  'fi' \
+  'exit 97' > "$target_fixture_bin/fixture.sh"
+chmod 0755 "$target_fixture_bin/fixture.sh"
+printf '%s\n' \
+  '@title Target fixture' \
+  '@description' \
+  'Fixture for generic endpoint resolution.' \
+  '@discover' \
+  'probe | fixture.sh | Fixture client' \
+  "root | $target_fixture_bin | Fixture client directory" \
+  'version | fixture.sh --version --bootstrap-server localhost:9092 | Reads the endpoint through the selected fixture client' \
+  '@connection ENDPOINT 9092' \
+  '@group demo' \
+  '@command List through the default endpoint' \
+  '@mode MODERN' \
+  '@since 1.0' \
+  '@description' \
+  'Uses the catalog default authority.' \
+  '@run' \
+  'fixture.sh --bootstrap-server localhost:9092 --list' \
+  '@end' > "$target_fixture_catalog"
+target_resolution_output="$(GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  ss() { printf "%s\n" "LISTEN 0 50 [::ffff:10.24.12.7]:9092 *:*"; }
+  _god_discover_resolve fixture "$2" || exit $?
+  printf "TARGET:%s\n" "$(_god_discover_target fixture)"
+  printf "VERSION:%s\n" "$(_god_discover_version fixture)"
+  _god_resolve_command fixture "$2" demo 1 "$3" ""
+' _ "$project_dir" "$target_fixture_catalog" "$target_fixture_bin")"
+if contains "$target_resolution_output" 'TARGET:10.24.12.7:9092' && contains "$target_resolution_output" 'VERSION:1.0' && \
+   contains "$target_resolution_output" $'DISPLAY\t'"$target_fixture_bin/fixture.sh --bootstrap-server 10.24.12.7:9092 --list" && \
+   not_contains "$target_resolution_output" 'localhost:9092'; then
+  pass 'resync caches a local endpoint candidate and rewrites only the reviewed runtime command'
+else
+  fail 'resync caches a local endpoint candidate and rewrites only the reviewed runtime command'
+fi
+
+mkdir -p "$smoke_home/.config/bash-god" || exit 1
+printf 'target=broker.internal:19092\n' > "$smoke_home/.config/bash-god/override.conf"
+target_override_output="$(GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  ss() { printf "%s\n" "LISTEN 0 50 10.24.12.7:9092 *:*"; }
+  _god_discover_resolve override "$2" || exit $?
+  printf "TARGET:%s\n" "$(_god_discover_target override)"
+  _god_resolve_command override "$2" demo 1 "$3" ""
+' _ "$project_dir" "$target_fixture_catalog" "$target_fixture_bin")"
+if contains "$target_override_output" 'TARGET:broker.internal:19092' && \
+   contains "$target_override_output" $'DISPLAY\t'"$target_fixture_bin/fixture.sh --bootstrap-server broker.internal:19092 --list" && \
+   not_contains "$target_override_output" '10.24.12.7:9092'; then
+  pass 'configured endpoint target overrides a discovered local listener'
+else
+  fail 'configured endpoint target overrides a discovered local listener'
+fi
+
+missing_client_service_output="$(GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_discover_path() { return 1; }
+  _god_discover_resolution() { printf "missing\n"; }
+  god mongo
+' _ "$project_dir")"
+if contains "$missing_client_service_output" '43 commands across 8 groups - curated, searchable, never executed.' && \
+   contains "$missing_client_service_output" 'mongo client not found on this machine · run god mongo --resync' && \
+   not_contains "$missing_client_service_output" 'Target: unresolved'; then
+  pass 'service dashboard explains an explicitly missing client without inventing a target'
+else
+  fail 'service dashboard explains an explicitly missing client without inventing a target'
+fi
+
+synced_search_output="$(GOD_COLOR=never bash -c '
+  . "$1/BASH_GOD.sh"
+  _god_discover_version() { printf "3.9.2\n"; }
+  god kafka q "list topics"
+' _ "$project_dir")"
+if contains "$synced_search_output" 'List topics through a broker' && \
+   not_contains "$synced_search_output" 'not verified on v3.9.2'; then
+  pass 'catalog review state never becomes a per-command compatibility warning'
+else
+  fail 'catalog review state never becomes a per-command compatibility warning'
 fi
 
 root_resync_log="$smoke_home/root-resync.log"

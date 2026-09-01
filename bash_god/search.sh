@@ -430,10 +430,12 @@ _god_render_search_details() {
 # _god_search_detected_versions SORTED_RESULTS TAB
 #
 # One SERVICE\tVERSION\tSYNCED line per distinct service appearing in the
-# results, from discover.sh's cache and the catalog header. A service that has
-# never resolved (or has no @discover block at all) is absent from the map.
+# results from discover.sh's cache. A service that has never resolved (or has
+# no @discover block at all) is absent from the map. Catalog @synced is
+# service-level maintenance information rendered by --paths, never a row
+# compatibility label.
 _god_search_detected_versions() {
-  local sorted_results tab service version seen catalog synced
+  local sorted_results tab service version seen
 
   sorted_results="$1"
   tab="$2"
@@ -444,9 +446,7 @@ _god_search_detected_versions() {
     seen="$seen $service"
     version="$(_god_discover_version "$service" 2>/dev/null)"
     [ -n "$version" ] || continue
-    catalog="$(_god_catalog_for "$service" 2>/dev/null)" || continue
-    synced="$(_god_catalog_synced "$catalog")"
-    printf '%s\t%s\t%s\n' "$service" "$version" "$synced"
+    printf '%s\t%s\n' "$service" "$version"
   done <<< "$sorted_results"
 }
 
@@ -456,9 +456,6 @@ _god_search_detected_versions() {
 #
 #   - @since/@until annotate an out-of-range row against its service's
 #     detected version. The row remains visible but cannot be executed.
-#   - A catalog older than the detected service version annotates each normal
-#     command as not verified. It remains runnable because @synced is a
-#     caution, not a compatibility boundary.
 #   - Same (service, @intent) rows collapse to the single member with the
 #     best compatibility and then highest @since unless ALL_VERSIONS is 1.
 #
@@ -491,7 +488,6 @@ _god_search_apply_policy() {
         if (map_lines[i] == "") continue
         split(map_lines[i], kv, "\t")
         detected[kv[1]] = kv[2]
-        synced[kv[1]] = kv[3]
       }
     }
 
@@ -515,9 +511,6 @@ _god_search_apply_policy() {
         } else if (numeric_version && until_version != "" && version_compare(version, until_version) > 0) {
           kind = "blocked"
           label = "works through v" until_version " (have v" version ")"
-        } else if (numeric_version && synced[service] ~ /^[0-9]+([.][0-9]+)*$/ && version_compare(version, synced[service]) > 0) {
-          kind = "warning"
-          label = "not verified on v" version
         } else if (!numeric_version && (since != "" || until_version != "")) {
           kind = "warning"
           label = "version could not be detected"

@@ -11,6 +11,8 @@ root | /usr/local/bin | Common AWS CLI v2, manual, and Intel Homebrew binary dir
 scan | /usr/local | Bounded fallback for the AWS CLI v2 bundled install layout
 version | aws --version | Prints the AWS CLI version; generic discovery captures stdout and stderr
 
+@connection CONTEXT
+
 @synced 2.36.34
 
 

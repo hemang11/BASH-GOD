@@ -79,12 +79,38 @@ _god_discover_cache_set() {
   mv -f "$temp" "$file" 2>/dev/null || { command rm -f -- "$temp"; return 1; }
 }
 
+_god_discover_cache_unset() {
+  local key file dir temp existing
+
+  key=$1
+  file="$(_god_discover_cache_file)" || return 1
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  dir="${file%/*}"
+  [ -L "$dir" ] && return 1
+  existing="$(command cat "$file" 2>/dev/null)"
+  temp="$(mktemp "$dir/.execution-paths.XXXXXX" 2>/dev/null)" || return 1
+  printf '%s\n' "$existing" | LC_ALL=C awk -v k="$key" 'index($0, k "=") != 1' > "$temp"
+  chmod 0600 "$temp" 2>/dev/null || true
+  mv -f "$temp" "$file" 2>/dev/null || { command rm -f -- "$temp"; return 1; }
+}
+
 _god_discover_path() {
   _god_discover_cache_get "$1.path"
 }
 
 _god_discover_version() {
   _god_discover_cache_get "$1.version"
+}
+
+_god_discover_target() {
+  _god_discover_cache_get "$1.target"
+}
+
+# Records whether an explicit resync found a usable client. An absent value
+# means no resync result is known yet, which must not be rendered as a failed
+# discovery attempt.
+_god_discover_resolution() {
+  _god_discover_cache_get "$1.resolution"
 }
 
 # The selected member of an ordered catalog probe family. Old caches do not
@@ -135,6 +161,28 @@ _god_discover_user_path() {
   ' "$file" 2>/dev/null
 }
 
+# _god_discover_user_target SERVICE
+#
+# `target=` is the intentional override for an endpoint catalog. It is an
+# authority only (host:port or [ipv6]:port), never a credential-bearing URI.
+_god_discover_user_target() {
+  local service file
+
+  service=$1
+  file="$(_god_discover_config_file "$service")" || return 1
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  LC_ALL=C awk -F= '
+    /^[[:space:]]*target[[:space:]]*=/ {
+      value = $0
+      sub(/^[^=]*=/, "", value)
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      print value
+      exit
+    }
+  ' "$file" 2>/dev/null
+}
+
 # ---------------------------------------------------------------------------
 # Resolution mechanisms. Each takes plain values pulled from the catalog, not
 # a service name, so the same code serves kafka today and mongo tomorrow.
@@ -142,6 +190,94 @@ _god_discover_user_path() {
 
 _god_discover_probe_at() {
   [ -n "$1" ] && [ -x "$1/$2" ]
+}
+
+_god_discover_target_is_authority() {
+  LC_ALL=C awk '
+    /^[A-Za-z0-9._-]+:[0-9]+$/ {
+      count = split($0, parts, ":")
+      exit(parts[count] >= 1 && parts[count] <= 65535 ? 0 : 1)
+    }
+    /^\[[0-9A-Fa-f:.]+\]:[0-9]+$/ {
+      value = $0
+      sub(/^.*\]:/, "", value)
+      exit(value >= 1 && value <= 65535 ? 0 : 1)
+    }
+    { exit 1 }
+  ' <<< "$1"
+}
+
+# _god_discover_local_listener_target PORT
+#
+# A local socket is a candidate authority, not proof of a client-reachable
+# service endpoint. It is discovered only during explicit resync and never
+# invokes sudo or probes the service. Prefer ss because it exposes listeners
+# without requiring access to another user's process details; lsof is a
+# portable fallback when it can see the socket.
+_god_discover_local_listener_target() {
+  local port target
+
+  port=$1
+  target=''
+  if command -v ss >/dev/null 2>&1; then
+    target="$(LC_ALL=C ss -H -ltn "sport = :$port" 2>/dev/null | LC_ALL=C awk -v port="$port" '
+      $1 == "LISTEN" {
+        value = $4
+        if (value ~ /^\[/) {
+          sub(/^\[/, "", value)
+          sub(/\]:[0-9]+$/, "", value)
+        } else {
+          sub(/:[0-9]+$/, "", value)
+        }
+        sub(/^::ffff:/, "", value)
+        if (value == "" || value == "*" || value == "0.0.0.0" || value == "::") next
+        if (value ~ /:/) print "[" value "]:" port
+        else print value ":" port
+        exit
+      }
+    ')"
+  fi
+  if [ -z "$target" ] && command -v lsof >/dev/null 2>&1; then
+    target="$(LC_ALL=C lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | LC_ALL=C awk -v port="$port" '
+      /TCP/ && /\(LISTEN\)$/ {
+        for (i = 1; i <= NF; i++) {
+          if ($i == "TCP" && i < NF) {
+            value = $(i + 1)
+            sub(/:[0-9]+$/, "", value)
+            if (value != "" && value != "*" && value != "0.0.0.0" && value != "::") {
+              print value ":" port
+              exit
+            }
+          }
+        }
+      }
+    ')"
+  fi
+  _god_discover_target_is_authority "$target" || return 1
+  printf '%s\n' "$target"
+}
+
+_god_discover_resolve_target() {
+  local service catalog kind port target source
+
+  service=$1
+  catalog=$2
+  kind="$(_god_catalog_connection_kind "$catalog")"
+  [ "$kind" = ENDPOINT ] || return 0
+  port="$(_god_catalog_connection_port "$catalog")"
+  target="$(_god_discover_user_target "$service")"
+  source='configured target'
+  if [ -z "$target" ]; then
+    target="$(_god_discover_local_listener_target "$port")" || target=''
+    source='local listener'
+  fi
+  if [ -n "$target" ] && _god_discover_target_is_authority "$target"; then
+    _god_discover_cache_set "${service}.target" "$target" || return 1
+    _god_discover_cache_set "${service}.target_source" "$source" || return 1
+  else
+    _god_discover_cache_unset "${service}.target" || return 1
+    _god_discover_cache_unset "${service}.target_source" || return 1
+  fi
 }
 
 # _god_discover_find_in_dir DIRECTORY PROBES
@@ -234,7 +370,7 @@ _god_discover_detect_version() {
 #   1  catalog declares no @discover block (display-only service)
 #   2  probe was not found anywhere
 _god_discover_resolve() {
-  local service catalog probes root scan version_command candidate path tool version user_path
+  local service catalog probes root scan version_command candidate path tool version user_path target port
 
   service=$1
   catalog=$2
@@ -258,16 +394,33 @@ _god_discover_resolve() {
   else
     candidate="$(_god_discover_find_via_scan "$scan" "$probes")" || candidate=''
   fi
-  [ -n "$candidate" ] || return 2
+  if [ -z "$candidate" ]; then
+    _god_discover_cache_unset "${service}.path" || return 2
+    _god_discover_cache_unset "${service}.version" || return 2
+    _god_discover_cache_unset "${service}.tool" || return 2
+    _god_discover_cache_unset "${service}.target" || return 2
+    _god_discover_cache_unset "${service}.target_source" || return 2
+    _god_discover_cache_set "${service}.resolution" missing || return 2
+    return 2
+  fi
   IFS="$(printf '\t')" read -r path tool <<< "$candidate"
-  [ -n "$path" ] && [ -n "$tool" ] || return 2
-
-  version_command="${version_command//<probe>/$tool}"
-  version="$(_god_discover_detect_version "$path" "$version_command")"
+  if [ -z "$path" ] || [ -z "$tool" ]; then
+    _god_discover_cache_set "${service}.resolution" missing || return 2
+    return 2
+  fi
 
   _god_discover_cache_set "${service}.path" "$path" || return 2
-  _god_discover_cache_set "${service}.version" "$version" || return 2
   _god_discover_cache_set "${service}.tool" "$tool" || return 2
+  _god_discover_resolve_target "$service" "$catalog" || return 2
+  version_command="${version_command//<probe>/$tool}"
+  if [ "$(_god_catalog_connection_kind "$catalog")" = ENDPOINT ]; then
+    target="$(_god_discover_target "$service" 2>/dev/null)"
+    port="$(_god_catalog_connection_port "$catalog")"
+    [ -z "$target" ] || version_command="${version_command//"localhost:$port"/$target}"
+  fi
+  version="$(_god_discover_detect_version "$path" "$version_command")"
+  _god_discover_cache_set "${service}.version" "$version" || return 2
+  _god_discover_cache_set "${service}.resolution" resolved || return 2
   return 0
 }
 
