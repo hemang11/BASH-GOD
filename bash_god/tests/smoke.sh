@@ -688,6 +688,25 @@ rich_unknown_key_output="$(bash -c '
   _god_menu_rich_read_key
   printf "KEY:%s\\n" "$_god_menu_rich_key"
 ' _ "$project_dir" "$rich_key_input")"
+# A terminal can expose ESC before the rest of an arrow sequence on a busy
+# remote host. Keep the descriptor open, then write the tail after the old
+# 60ms window. The parser must still consume it as one down-arrow event rather
+# than cancel and leave literal "[B" at the caller's prompt.
+rich_delayed_tail_fifo="$rich_fixture/delayed-escape-tail"
+mkfifo "$rich_delayed_tail_fifo" || exit 1
+(
+  exec 4> "$rich_delayed_tail_fifo"
+  sleep 0.12
+  printf '[B' >&4
+) &
+rich_delayed_tail_writer=$!
+rich_delayed_tail_output="$(bash -c '
+  . "$1/bash_god/menu.sh"
+  exec 3< "$2"
+  _god_menu_rich_read_escape_tail
+  printf "DELAYED TAIL:%s\\n" "$_god_menu_rich_escape_tail"
+' _ "$project_dir" "$rich_delayed_tail_fifo")"
+wait "$rich_delayed_tail_writer" || :
 # A regular file is not a raw terminal: Bash is allowed to buffer its queued
 # bytes before the Perl escape-tail reader sees them. Exercise the rapid
 # navigation loop with deterministic normalized keys instead; the key parser
@@ -871,7 +890,8 @@ if contains "$rich_fallback_output" 'MATCHING OPERATIONS' && contains "$rich_fal
    not_contains "$rich_render_output" 'COMMAND' && not_contains "$rich_render_output" 'replace' && \
    contains "$rich_cursor_output" 'HIDESHOW' && contains "$rich_interrupt_output" 'INTERRUPT STATUS:130' && \
    not_contains "$rich_interrupt_output" 'INTERRUPT DID NOT BREAK KEY READ' && contains "$rich_key_output" 'KEY:down' && \
-   contains "$rich_unknown_key_output" 'KEY:unknown' && contains "$rich_rapid_arrow_output" 'RAPID:1|second command' && \
+   contains "$rich_unknown_key_output" 'KEY:unknown' && contains "$rich_delayed_tail_output" 'DELAYED TAIL:[B' && \
+   contains "$rich_rapid_arrow_output" 'RAPID:1|second command' && \
    contains "$rich_blocked_enter_output" 'BLOCKED ENTER:-1' && \
    contains "$rich_editor_output" 'READLINE|/resolved/kafka-consumer-groups.sh --list' && \
    contains "$rich_editor_output" 'INLINE EDIT|0|/resolved/kafka-consumer-groups.sh --list --extra' && \

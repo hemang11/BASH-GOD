@@ -743,7 +743,12 @@ _god_menu_rich_read_escape_tail() {
   _god_menu_rich_escape_tail=''
   tail="$(perl -MFcntl=F_GETFL,F_SETFL,O_NONBLOCK -MTime::HiRes=time -e '
     my $flags = fcntl(STDIN, F_GETFL, 0);
-    my $deadline = time + 0.06;
+    # An arrow key is normally delivered as one three-byte write, but an
+    # overloaded terminal, serial console, or SSH hop can expose ESC before
+    # its "[B" tail.  Do not restore the terminal after that first byte and
+    # leak the tail into the caller shell.  A quarter-second window is still
+    # short for a deliberate Escape while covering a delayed terminal read.
+    my $deadline = time + 0.25;
     sub read_byte {
       my $remaining = $deadline - time;
       return undef if $remaining <= 0;
@@ -777,8 +782,9 @@ _god_menu_rich_read_escape_tail() {
 }
 
 # Normalise terminal input into names rather than making every caller carry
-# escape-sequence parsing. A bare Escape cancels in roughly 60ms rather than
-# waiting a whole Bash 3.2 timeout interval.
+# escape-sequence parsing. A bare Escape cancels in roughly 250ms rather than
+# waiting a whole Bash 3.2 timeout interval, while a delayed arrow-key tail
+# remains inside the picker instead of leaking to the parent shell.
 _god_menu_rich_read_key() {
   local key tail
 
