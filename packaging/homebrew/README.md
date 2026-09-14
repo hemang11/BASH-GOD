@@ -28,7 +28,12 @@ packaging/homebrew/render-formula.sh \
 The formula pins versioned GitHub Release URLs and SHA-256 checksums; it must never point at a
 mutable `latest` download. It installs the selected archive beneath Formula-private `libexec` and
 exposes the relocatable launcher through a relative `bin` symlink. It never uses the direct GitHub
-installer or creates its ownership manifest.
+installer or creates its ownership manifest. During each Formula install or upgrade, Homebrew runs
+the packaged `god --resync` as a quiet, non-fatal post-install step. That hydrates the invoking
+user's discovery cache with local client paths, versions, and candidate targets before the first
+search; it does not run a catalog operation or make a failed optional client block installation. The
+Formula writes an inert `package-owner` marker inside its private `libexec` runtime so BASH_GOD can
+direct `god --uninstall` and its help footer to `brew uninstall bash-god` without guessing from paths.
 
 Run `bash packaging/tests/homebrew-layout-smoke.sh` before a tap change. The test creates release
 archives locally, validates the generated Formula syntax and hashes, and proves the real launcher

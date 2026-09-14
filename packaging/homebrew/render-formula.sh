@@ -167,7 +167,15 @@ render() {
     '      odie "missing BASH_GOD runtime directory: #{package_root}"' \
     '    end' \
     '    libexec.install Dir.children(source_root).map { |entry| "#{source_root}/#{entry}" }' \
+    '    (libexec/"share/bash-god").mkpath' \
+    '    (libexec/"share/bash-god/package-owner").write("homebrew\n")' \
     '    bin.install_symlink libexec/"bin/god"' \
+    '  end' \
+    '' \
+    '  post_install_steps do' \
+    '    run "god", args: ["--resync"], base: :bin, env: { "GOD_COLOR" => "never" },' \
+    '        must_succeed: false, print_stdout: false, print_stderr: false,' \
+    '        writable_paths: [".local/state"], writable_base: :home' \
     '  end' \
     '' \
     '  test do' \

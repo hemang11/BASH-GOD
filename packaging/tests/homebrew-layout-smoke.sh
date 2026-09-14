@@ -97,6 +97,10 @@ render_status=$?
 install_method_count="$(LC_ALL=C awk '$0 == "  def install" { count++ } END { print count + 0 }' "$formula")"
 if [ "$render_status" -eq 0 ] && ruby -c "$formula" >/dev/null 2>&1 && \
    contains "$(command cat "$formula")" 'bin.install_symlink libexec/"bin/god"' && \
+   contains "$(command cat "$formula")" '(libexec/"share/bash-god/package-owner").write("homebrew\n")' && \
+   contains "$(command cat "$formula")" 'post_install_steps do' && \
+   contains "$(command cat "$formula")" 'run "god", args: ["--resync"], base: :bin' && \
+   contains "$(command cat "$formula")" 'writable_paths: [".local/state"], writable_base: :home' && \
    ! contains "$(command cat "$formula")" "  version \"$version\"" && \
    [ "$install_method_count" -eq 1 ] && \
    contains "$(command cat "$formula")" "bash-god-$version-darwin-arm64.tar.gz" && \
@@ -150,6 +154,8 @@ package_root="bash-god-$version-$host_target"
 mkdir -p "$cellar/libexec" "$cellar/bin" "$global_bin" "$stage" || exit 1
 tar -xzf "$host_archive" -C "$stage" || exit 1
 mv "$stage/$package_root"/* "$cellar/libexec/" || exit 1
+mkdir -p "$cellar/libexec/share/bash-god" || exit 1
+printf 'homebrew\n' > "$cellar/libexec/share/bash-god/package-owner"
 ln -s '../libexec/bin/god' "$cellar/bin/god"
 ln -s "$cellar/bin/god" "$global_bin/god"
 
@@ -167,12 +173,21 @@ uninstall_status=0
 uninstall_output="$(HOME="$fixture/home" XDG_CONFIG_HOME="$fixture/config" XDG_CACHE_HOME="$fixture/cache" XDG_STATE_HOME="$fixture/state" XDG_DATA_HOME="$fixture/data" BASH_GOD_SKIP_INITIAL_RESYNC=1 GOD_COLOR=never "$global_bin/god" --uninstall 2>&1)" || uninstall_status=$?
 if [ "$uninstall_status" -eq 2 ] && \
    contains "$uninstall_output" 'not a managed GitHub Release installation' && \
+   contains "$uninstall_output" 'brew uninstall bash-god' && \
    [ -x "$cellar/libexec/bin/god" ] && \
    [ -x "$cellar/libexec/libexec/bash-god/god-tui" ] && \
    [ ! -e "$cellar/libexec/share/bash-god/install-manifest" ]; then
   pass 'package-managed layout refuses BASH_GOD maintenance without changing Formula-owned files'
 else
   fail 'package-managed layout refuses BASH_GOD maintenance without changing Formula-owned files'
+fi
+
+root_output="$(HOME="$fixture/home" XDG_CONFIG_HOME="$fixture/config" XDG_CACHE_HOME="$fixture/cache" XDG_STATE_HOME="$fixture/state" XDG_DATA_HOME="$fixture/data" BASH_GOD_SKIP_INITIAL_RESYNC=1 GOD_COLOR=never "$global_bin/god" 2>&1)"
+if contains "$root_output" 'Remove: brew uninstall bash-god' && \
+   ! contains "$root_output" 'Remove: god --uninstall'; then
+  pass 'package-managed root help advertises Homebrew removal instead of managed-release removal'
+else
+  fail 'package-managed root help advertises Homebrew removal instead of managed-release removal'
 fi
 
 if [ "$failures" -eq 0 ]; then
