@@ -9,8 +9,9 @@ smaller than the source repository and never includes personal shell aliases or 
 ## Scope
 
 This workflow supports an unprivileged, real-file installation under an absolute prefix such as
-`$HOME/.local`. It builds the immutable runtime assets and the reviewed Homebrew formula input, but
-does not itself publish a tap, RPM, or APT repository and does not edit shell startup files.
+`$HOME/.local`. It builds immutable runtime assets and the reviewed Homebrew formula input. Tagged
+release automation publishes the matching checksum-pinned formula to the official tap; it does not
+publish RPM or APT repositories and does not edit shell startup files.
 
 ## Implementation Summary
 
@@ -116,12 +117,15 @@ are **Full smoke suite**, **Native terminal runtime (linux-arm64)**, **Native te
 `.github/workflows/release.yml` runs only for `v*` tags. It calls the same smoke workflow first,
 checks that `vVERSION` matches `src/core.sh`, rejects a tagged commit that is not contained in
 `main`, installs the pinned Go toolchain, cross-compiles the four helpers, builds the target assets
-and bridge, and creates the GitHub Release only after every check passes.
+and bridge, and creates the GitHub Release only after every check passes. It then downloads the four
+published target archives, verifies every published SHA-256 file, renders the matching formula, and
+updates `hemang11/homebrew-tap` on `live`. The scoped `HOMEBREW_TAP_TOKEN` Actions secret is required
+before release assets are built, so a tag cannot silently skip formula publication.
 
 GitHub Actions cannot make its own checks mandatory. The repository's `main` protection requires a
-pull request, one approval, resolved conversations, an up-to-date base, and all four contexts above.
-It also applies to administrators, so a failed native terminal job cannot be bypassed by merging
-directly to `main`.
+pull request, resolved conversations, an up-to-date base, and all four contexts above. It also
+applies to administrators, so a failed native terminal job cannot be bypassed by merging directly to
+`main`.
 
 ## Public Installation
 
@@ -184,8 +188,9 @@ cache, state, and data. It refuses source checkouts and package-manager-owned in
    `main`.
 3. Let the release workflow repeat every smoke suite, build the clean target assets and bridge, and
    publish both installers, public bootstrap, and every `.sha256` file.
-4. Render `Formula/bash-god.rb` from the published target archives, then review, install, test, and
-   publish it in `hemang11/homebrew-tap`.
+4. Confirm the release workflow's Homebrew formula job downloaded and verified the published target
+   archives, then updated `hemang11/homebrew-tap`. Review the workflow and run
+   `brew audit --strict hemang11/tap/bash-god` where Homebrew is available.
 5. Download the host target asset and repeat an isolated-prefix install before announcing the release.
 
 The Homebrew tap installs the same staged runtime without changing the catalog or dispatcher.
