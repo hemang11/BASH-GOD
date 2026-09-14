@@ -396,7 +396,7 @@ missing_client_service_output="$(GOD_COLOR=never bash -c '
   _god_discover_resolution() { printf "missing\n"; }
   god mongo
 ' _ "$project_dir")"
-if contains "$missing_client_service_output" '43 commands across 8 groups - curated, searchable, never executed.' && \
+if contains "$missing_client_service_output" '45 commands across 8 groups - curated, searchable, never executed.' && \
    contains "$missing_client_service_output" 'mongo client not found on this machine · run god mongo --resync' && \
    not_contains "$missing_client_service_output" 'Target: unresolved'; then
   pass 'service dashboard explains an explicitly missing client without inventing a target'
