@@ -18,6 +18,8 @@ jobs:
     needs: smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      version: ${{ steps.release.outputs.version }}
     permissions:
       contents: write
 
@@ -50,6 +52,15 @@ jobs:
 
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
 
+      - name: Require Homebrew tap publisher
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            printf '::error::HOMEBREW_TAP_TOKEN is required to publish the matching Homebrew formula.\n'
+            exit 1
+          fi
+
       - name: Build checksum-backed release assets
         run: ./packaging/build-runtime.sh
 
@@ -81,3 +92,90 @@ jobs:
             --verify-tag \
             --generate-notes \
             --title "$release_title"
+
+  homebrew:
+    name: Publish Homebrew formula
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: homebrew-tap-live
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+
+    steps:
+      - name: Check out the tagged BASH_GOD source
+        uses: actions/checkout@v4
+
+      - name: Download and verify the published target archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release-assets
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --dir release-assets \
+            --pattern "bash-god-$VERSION-darwin-amd64.tar.gz" \
+            --pattern "bash-god-$VERSION-darwin-amd64.tar.gz.sha256" \
+            --pattern "bash-god-$VERSION-darwin-arm64.tar.gz" \
+            --pattern "bash-god-$VERSION-darwin-arm64.tar.gz.sha256" \
+            --pattern "bash-god-$VERSION-linux-amd64.tar.gz" \
+            --pattern "bash-god-$VERSION-linux-amd64.tar.gz.sha256" \
+            --pattern "bash-god-$VERSION-linux-arm64.tar.gz" \
+            --pattern "bash-god-$VERSION-linux-arm64.tar.gz.sha256"
+
+          for target in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64; do
+            (
+              cd release-assets
+              sha256sum -c "bash-god-$VERSION-$target.tar.gz.sha256"
+            )
+          done
+
+      - name: Check out the official Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: hemang11/homebrew-tap
+          ref: live
+          path: homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          persist-credentials: true
+
+      - name: Render the checksum-pinned formula
+        id: formula
+        shell: bash
+        run: |
+          staging_dir="$(mktemp -d)"
+          cleanup() {
+            command rm -rf -- "$staging_dir"
+          }
+          trap cleanup EXIT HUP INT TERM
+
+          ./packaging/homebrew/render-formula.sh \
+            --version "$VERSION" \
+            --darwin-amd64 "release-assets/bash-god-$VERSION-darwin-amd64.tar.gz" \
+            --darwin-arm64 "release-assets/bash-god-$VERSION-darwin-arm64.tar.gz" \
+            --linux-amd64 "release-assets/bash-god-$VERSION-linux-amd64.tar.gz" \
+            --linux-arm64 "release-assets/bash-god-$VERSION-linux-arm64.tar.gz" \
+            --output "$staging_dir/bash-god.rb"
+          ruby -c "$staging_dir/bash-god.rb"
+
+          if cmp -s "$staging_dir/bash-god.rb" homebrew-tap/Formula/bash-god.rb; then
+            printf 'changed=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          mv "$staging_dir/bash-god.rb" homebrew-tap/Formula/bash-god.rb
+          git -C homebrew-tap diff --check
+          printf 'changed=true\n' >> "$GITHUB_OUTPUT"
+
+      - name: Commit the matching formula to the tap
+        if: steps.formula.outputs.changed == 'true'
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          git -C homebrew-tap config user.name 'github-actions[bot]'
+          git -C homebrew-tap config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C homebrew-tap add Formula/bash-god.rb
+          git -C homebrew-tap commit -m "bash-god $VERSION"
+          git -C homebrew-tap push origin HEAD:live

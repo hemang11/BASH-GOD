@@ -56,6 +56,9 @@ jobs:
       - name: Prove the Homebrew launcher layout
         run: bash packaging/tests/homebrew-layout-smoke.sh
 
+      - name: Validate the Homebrew release-sync contract
+        run: bash packaging/tests/homebrew-release-sync-smoke.sh
+
       - name: Run public-install smoke tests
         run: bash packaging/tests/install-smoke.sh
 

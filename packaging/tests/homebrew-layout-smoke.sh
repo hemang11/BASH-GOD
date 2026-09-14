@@ -76,7 +76,7 @@ host_target="$(platform)" || {
 version="$(LC_ALL=C awk -F"'" '/^_BASH_GOD_VERSION=/ { print $2; exit }' "$repo_dir/src/core.sh")"
 assets="$fixture/assets"
 formula="$fixture/bash-god.rb"
-mkdir -p "$assets" "$fixture/home" "$fixture/config" "$fixture/cache" "$fixture/state" "$fixture/data" || exit 1
+mkdir -p "$assets" "$fixture/home" "$fixture/config" "$fixture/cache" "$fixture/state" "$fixture/data" "$fixture/homebrew-cache" || exit 1
 
 if "$repo_dir/packaging/build-runtime.sh" "$assets" >/dev/null; then
   pass 'release builder creates the archive set used by the Homebrew formula'
@@ -94,8 +94,11 @@ fi
   --linux-arm64 "$assets/bash-god-$version-linux-arm64.tar.gz" \
   --output "$formula"
 render_status=$?
+install_method_count="$(LC_ALL=C awk '$0 == "  def install" { count++ } END { print count + 0 }' "$formula")"
 if [ "$render_status" -eq 0 ] && ruby -c "$formula" >/dev/null 2>&1 && \
    contains "$(command cat "$formula")" 'bin.install_symlink libexec/"bin/god"' && \
+   ! contains "$(command cat "$formula")" "  version \"$version\"" && \
+   [ "$install_method_count" -eq 1 ] && \
    contains "$(command cat "$formula")" "bash-god-$version-darwin-arm64.tar.gz" && \
    contains "$(command cat "$formula")" "$(sha256 "$assets/bash-god-$version-darwin-arm64.tar.gz")" && \
    contains "$(command cat "$formula")" "$(sha256 "$assets/bash-god-$version-linux-amd64.tar.gz")"; then
@@ -104,12 +107,16 @@ else
   fail 'renderer creates a syntax-valid multi-target formula with exact archive checksums'
 fi
 
-# Homebrew normally accepts formula files only inside an installed tap. Its
-# documented developer mode permits local formula linting without mutating a
-# real tap; tap release still performs style/audit in Formula/bash-god.rb.
+# Lint a neutral copy of the generated file. Homebrew still loads an already
+# installed tap Formula/bash-god.rb and sees its BashGod#install alongside the
+# isolated copy, so exclude only that external duplicate-method false positive.
+# The assertion above proves the generated Formula itself has exactly one
+# install method; tap publication separately audits the named installed file.
 if command -v brew >/dev/null 2>&1; then
+  style_formula="$fixture/generated-homebrew-formula.rb"
+  cp "$formula" "$style_formula" || exit 1
   brew_style_status=0
-  brew_style_output="$(HOMEBREW_DEVELOPER=1 brew style --formula "$formula" 2>&1)" || brew_style_status=$?
+  brew_style_output="$(HOMEBREW_DEVELOPER=1 HOMEBREW_CACHE="$fixture/homebrew-cache" HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 brew style --except-cops Lint/DuplicateMethods "$style_formula" 2>&1)" || brew_style_status=$?
   if [ "$brew_style_status" -eq 0 ]; then
     pass 'Homebrew style accepts the generated Formula DSL'
   else

@@ -126,7 +126,6 @@ render() {
     'class BashGod < Formula' \
     '  desc "Searchable local command memory for reviewed native operations"' \
     '  homepage "https://github.com/hemang11/BASH-GOD"' \
-    "  version \"$version\"" \
     '  license "MIT"' \
     '' \
     '  on_macos do' \
