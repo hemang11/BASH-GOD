@@ -61,6 +61,10 @@ else
   fail 'MongoDB discovery resolves the configured modern client'
 fi
 
+# shellcheck source=../resolve.sh
+. "$project_dir/src/resolve.sh"
+modern_version_model="$(_god_resolve_command mongo "$catalog" native 1 "$fixture_bin" '')"
+
 command rm -f -- "$fixture_bin/mongosh"
 if _god_discover_resolve mongo "$catalog"; then
   expect_eq "$(_god_discover_tool mongo)" mongo 'MongoDB discovery falls back to legacy mongo'
@@ -83,6 +87,16 @@ if printf '%s\n' "$modern_model" | LC_ALL=C grep -Fq 'DISPLAY	mongosh "mongodb:/
   :
 else
   fail 'modern and legacy MongoDB records retain their exact reviewed shell'
+fi
+
+# A version lookup must expose the selected client itself, rather than leaving
+# search to match version wording inside unrelated Database Tools help rows.
+legacy_version_model="$(_god_resolve_command mongo "$catalog" native 2 "$fixture_bin" '')"
+if has_exact_line "$modern_version_model" $'DISPLAY\t'"$fixture_bin/mongosh --version" && \
+   has_exact_line "$legacy_version_model" $'DISPLAY\t'"$fixture_bin/mongo --version"; then
+  :
+else
+  fail 'MongoDB version records expose modern and legacy selected clients'
 fi
 
 # A cached service Target must reach URI-shaped and --host/--port-shaped
@@ -145,7 +159,7 @@ if ! LC_ALL=C awk '
     if (title == "Select a database" && group != "query") fail("Select a database must be in query")
   }
   END {
-    if (records != 43) fail("expected 43 records; got " records)
+    if (records != 45) fail("expected 45 records; got " records)
     if (wrapped != 23) fail("expected 23 executable shell expressions; got " wrapped)
     exit(errors ? 1 : 0)
   }
@@ -169,7 +183,7 @@ done < <(LC_ALL=C awk '
   /^@command[[:space:]]+/ { entry++; next }
   /^@end$/ { print group "\t" entry }
 ' "$catalog")
-expect_eq "$all_rows" 43 'all MongoDB catalog rows export RUNNABLE 1'
+expect_eq "$all_rows" 45 'all MongoDB catalog rows export RUNNABLE 1'
 
 if [ "$failures" -ne 0 ]; then
   printf '%s MongoDB catalog check(s) failed\n' "$failures" >&2

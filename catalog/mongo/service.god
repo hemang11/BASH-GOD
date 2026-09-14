@@ -667,6 +667,30 @@ This inserts data and can create missing databases or collections. Use the same 
 
 @group native
 
+@command Show installed Mongo shell version
+@mode MODERN
+@since 0.0
+@requires
+tool | service:mongosh | present
+@description
+Prints the installed mongosh client version without connecting to a MongoDB deployment.
+@run
+mongosh --version
+@end
+
+@command Show installed legacy Mongo shell version
+@mode MODERN
+@since 0.0
+@requires
+tool | service:mongo | present
+@description
+Prints the installed legacy mongo shell version without connecting to a MongoDB deployment.
+@run
+mongo --version
+@notes
+Prefer the mongosh version command when the modern shell is installed.
+@end
+
 @command Show MongoDB shell command-line help
 @mode MODERN
 @since 0.0

@@ -135,6 +135,22 @@ what was found, the catalog's review baseline, and `Target: host:port` or `Targe
 endpoint services. A local listener is only a candidate; it is not proof that a remote service is
 reachable.
 
+### Use a client installed outside the default locations
+
+Discovery checks the catalog's reviewed installation roots and your `PATH`; it intentionally does
+not crawl personal directories. If you extracted Kafka somewhere custom, point BASH_GOD at its
+**bin directory** once, then resync:
+
+```bash
+mkdir -p ~/.config/bash-god
+printf 'path=%s\n' "$HOME/Documents/kafka_2.11-1.1.0/bin" > ~/.config/bash-god/kafka.conf
+god kafka --resync
+```
+
+Use the same one-line `path=` file for another discoverable service by replacing `kafka` with the
+service name and supplying the directory containing its client executable. This is an explicit local
+path override; it takes precedence over the catalog defaults and `PATH`.
+
 BASH_GOD does not translate arbitrary Linux commands into macOS commands, guess credentials, or
 contact infrastructure while rendering a view. If a command does not meet its declared environment
 requirements, it is knowledge—not a locally runnable offer.
