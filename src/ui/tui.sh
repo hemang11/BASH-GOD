@@ -308,7 +308,7 @@ _god_tui_send_detail() {
 # matching-operations view because the helper could not provide a terminal UI.
 _god_tui_select() {
   local rows initial header subtitle provider total helper_status got_result
-  local protocol version record field_a field_b extra request_id index action runnable
+  local protocol version record field_a field_b extra request_id index action runnable read_status
 
   rows=$1
   initial=$2
@@ -376,7 +376,25 @@ _god_tui_select() {
   fi
 
   got_result=0
-  while IFS="$(printf '\t')" read -r protocol version record field_a field_b extra <&9; do
+  while :; do
+    if IFS="$(printf '\t')" read -r -t 1 protocol version record field_a field_b extra <&9; then
+      :
+    else
+      read_status=$?
+      if _god_tui_interrupted; then
+        _god_tui_cancel_interrupted
+        return $?
+      fi
+      # A shell can defer a signal trap while a blocking FIFO read is pending.
+      # Bound each read so Ctrl-C/TERM is observed promptly.  A live helper
+      # simply means no protocol record arrived during this second; EOF from a
+      # departed helper falls through to the normal finish/error path below.
+      if { [ "$read_status" -eq 1 ] || [ "$read_status" -gt 128 ]; } && \
+         [ -n "${_god_tui_pid:-}" ] && kill -0 "$_god_tui_pid" 2>/dev/null; then
+        continue
+      fi
+      break
+    fi
     if _god_tui_interrupted; then
       _god_tui_cancel_interrupted
       return $?

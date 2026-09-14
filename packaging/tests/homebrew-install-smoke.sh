@@ -49,15 +49,20 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-real_brew="$(command -v brew)"
-real_prefix="$(CDPATH= cd "$(dirname "$real_brew")/.." 2>/dev/null && pwd -P)" || exit 1
+real_repository="$(brew --repository)"
+real_brew="$real_repository/bin/brew"
+real_library="$real_repository/Library/Homebrew"
+[ -x "$real_brew" ] && [ -d "$real_library" ] || {
+  printf 'BASH_GOD Homebrew install smoke could not locate the Homebrew runtime.\n' >&2
+  exit 2
+}
 test_brew="$fixture/bin/brew"
 tap="$fixture/Library/Taps/hemang11/homebrew-bash-god"
 formula="$tap/Formula/bash-god.rb"
 assets="$fixture/assets"
 mkdir -p "$fixture/bin" "$fixture/Library/Taps" "$tap/Formula" "$assets" || exit 1
 cp "$real_brew" "$test_brew"
-ln -s "$real_prefix/Library/Homebrew" "$fixture/Library/Homebrew"
+ln -s "$real_library" "$fixture/Library/Homebrew"
 
 brew_env() {
   HOME="$fixture/brew-home" \
