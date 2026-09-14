@@ -68,9 +68,9 @@ The direct installer writes the manifest *after* it validates and activates a re
 
 ### Homebrew layout
 
-A formula unpacks one verified target archive into the formula's private `libexec` directory, then exposes only the launcher with Homebrew's relative `bin.install_symlink libexec/"bin/god"`. Homebrew itself may add another link from its global `bin`; the launcher follows both links and sees the formula `libexec` directory as its runtime prefix.
+A formula unpacks one verified target archive into the formula's private `libexec` directory, then exposes only the launcher with Homebrew's relative `bin.install_symlink libexec/"bin/god"`. Homebrew itself may add another link from its global `bin`; the launcher follows both links and sees the formula `libexec` directory as its runtime prefix. Its declarative post-install step then runs the packaged `god --resync` quietly and without making a discovery failure fatal. This creates only the invoking user's normal XDG discovery cache; it never runs a catalog operation.
 
-This uses Homebrew's intended private `libexec` boundary and relative symlink helper. The formula must never call the direct installer and must not create the direct-install manifest. `god --uninstall` therefore refuses safely and tells the operator to use the owning package manager.
+This uses Homebrew's intended private `libexec` boundary and relative symlink helper. The formula must never call the direct installer and must not create the direct-install manifest. It instead writes the inert package-owner marker in its private runtime; `god --uninstall` and root help can therefore direct the operator specifically to `brew uninstall bash-god` without path inference.
 
 ### Debian layout
 

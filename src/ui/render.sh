@@ -108,6 +108,66 @@ _god_print_view_key_rows() {
   printf '  %s%-15s%s %sHide decorative home artwork; accepted everywhere%s\n' "$_GOD_ACCENT" '--quiet' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
 }
 
+# Packages record their owner beside the runtime. This avoids guessing from a
+# Cellar path and keeps source checkouts from advertising a removal command
+# they do not own.
+_god_runtime_package_owner() {
+  local runtime_dir prefix marker owner
+
+  runtime_dir="${_BASH_GOD_CORE_DIR%/src}"
+  prefix="${runtime_dir%/lib/bash-god}"
+  marker="$prefix/share/bash-god/package-owner"
+  [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+  IFS= read -r owner < "$marker" || return 1
+  case "$owner" in
+    homebrew) printf '%s\n' "$owner" ;;
+    *) return 1 ;;
+  esac
+}
+
+_god_runtime_is_direct_install() {
+  local runtime_dir prefix manifest
+
+  runtime_dir="${_BASH_GOD_CORE_DIR%/src}"
+  prefix="${runtime_dir%/lib/bash-god}"
+  manifest="$prefix/share/bash-god/install-manifest"
+  [ -f "$manifest" ] && [ ! -L "$manifest" ]
+}
+
+_god_print_removal_row() {
+  case "$(_god_runtime_package_owner 2>/dev/null)" in
+    homebrew)
+      printf '  %s%-38s%s %sRemove this Homebrew installation%s\n' \
+        "$_GOD_COMMAND" 'brew uninstall bash-god' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+      ;;
+    *)
+      if _god_runtime_is_direct_install; then
+        printf '  %s%-38s%s %sCompletely remove a managed GitHub install%s\n' \
+          "$_GOD_COMMAND" 'god --uninstall' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+      fi
+      ;;
+  esac
+}
+
+_god_print_root_footer() {
+  local removal
+
+  removal=''
+  case "$(_god_runtime_package_owner 2>/dev/null)" in
+    homebrew) removal='brew uninstall bash-god' ;;
+    *) _god_runtime_is_direct_install && removal='god --uninstall' ;;
+  esac
+
+  if [ -n "$removal" ]; then
+    printf '%s  Keys: %sgod --keys%s%s    Version: %sgod --version%s%s    Remove: %s%s%s\n' \
+      "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET" \
+      "$_GOD_DIM" "$_GOD_COMMAND" "$removal" "$_GOD_RESET"
+  else
+    printf '%s  Keys: %sgod --keys%s%s    Version: %sgod --version%s\n' \
+      "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET"
+  fi
+}
+
 _god_print_view_keys() {
   local service group
 
@@ -139,7 +199,7 @@ _god_print_view_keys() {
     printf '  %s%-38s%s %sRefresh every detectable service%s\n' "$_GOD_COMMAND" 'god --resync' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sForce a fresh probe for one service%s\n' "$_GOD_COMMAND" 'god SERVICE --resync' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
     printf '  %s%-38s%s %sShow BASH_GOD version and license%s\n' "$_GOD_COMMAND" 'god --version' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
-    printf '  %s%-38s%s %sCompletely remove a managed GitHub install%s\n' "$_GOD_COMMAND" 'god --uninstall' "$_GOD_RESET" "$_GOD_DIM" "$_GOD_RESET"
+    _god_print_removal_row
   fi
 }
 
@@ -163,9 +223,7 @@ _god_print_root_help() {
   _god_print_view_key_rows
 
   printf '\n%s  Case-insensitive. On a TTY, search can offer a reviewed command; otherwise copy and replace <placeholders>.%s\n' "$_GOD_DIM" "$_GOD_RESET"
-  printf '%s  Keys: %sgod --keys%s%s    Version: %sgod --version%s%s    Remove: %sgod --uninstall%s\n' \
-    "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET" "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET" \
-    "$_GOD_DIM" "$_GOD_COMMAND" "$_GOD_RESET"
+  _god_print_root_footer
 }
 
 

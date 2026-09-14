@@ -28,6 +28,13 @@ fail() {
   printf 'not ok %02d - %s\n' "$checks" "$1"
 }
 
+contains() {
+  case "$1" in
+    *"$2"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 case "$(uname -s)" in
   Darwin) ;;
   *)
@@ -52,7 +59,8 @@ trap cleanup EXIT HUP INT TERM
 real_repository="$(brew --repository)"
 real_brew="$real_repository/bin/brew"
 real_library="$real_repository/Library/Homebrew"
-[ -x "$real_brew" ] && [ -d "$real_library" ] || {
+real_core_tap="$real_repository/Library/Taps/homebrew/homebrew-core"
+[ -x "$real_brew" ] && [ -d "$real_library" ] && [ -d "$real_core_tap" ] || {
   printf 'BASH_GOD Homebrew install smoke could not locate the Homebrew runtime.\n' >&2
   exit 2
 }
@@ -60,18 +68,27 @@ test_brew="$fixture/bin/brew"
 tap="$fixture/Library/Taps/hemang11/homebrew-bash-god"
 formula="$tap/Formula/bash-god.rb"
 assets="$fixture/assets"
-mkdir -p "$fixture/bin" "$fixture/Library/Taps" "$tap/Formula" "$assets" || exit 1
+fake_bin="$fixture/fake-bin"
+mkdir -p "$fixture/bin" "$fixture/Library/Taps/homebrew" "$tap/Formula" "$assets" "$fake_bin" || exit 1
 cp "$real_brew" "$test_brew"
 ln -s "$real_library" "$fixture/Library/Homebrew"
-
+ln -s "$real_core_tap" "$fixture/Library/Taps/homebrew/homebrew-core"
+printf '%s\n' '#!/bin/sh' 'printf "aws-cli/2.36.1 Python/3 Darwin/arm64\n"' > "$fake_bin/aws"
+printf '%s\n' '#!/bin/sh' 'printf "{\\"version\\":{\\"number\\":\\"8.15.0\\"}}\n"' > "$fake_bin/curl"
+printf '%s\n' '#!/bin/sh' 'printf "Client Version: v1.36.1\n"' > "$fake_bin/kubectl"
+printf '%s\n' '#!/bin/sh' 'printf "3.9.2\n"' > "$fake_bin/kafka-topics.sh"
+printf '%s\n' '#!/bin/sh' 'printf "2.5.0\n"' > "$fake_bin/mongosh"
+chmod 0755 "$fake_bin/aws"
+chmod 0755 "$fake_bin/curl" "$fake_bin/kubectl" "$fake_bin/kafka-topics.sh" "$fake_bin/mongosh"
 brew_env() {
   HOME="$fixture/brew-home" \
+  PATH="$fake_bin:$PATH" \
   HOMEBREW_CACHE="$fixture/cache" \
   HOMEBREW_LOGS="$fixture/logs" \
   HOMEBREW_TEMP="$fixture/tmp" \
   HOMEBREW_NO_AUTO_UPDATE=1 \
+  HOMEBREW_NO_INSTALL_FROM_API=1 \
   HOMEBREW_DEVELOPER=1 \
-  HOMEBREW_NO_REQUIRE_TAP_TRUST=1 \
   "$test_brew" "$@"
 }
 
@@ -96,13 +113,42 @@ else
   fail 'fixture Formula is rendered in a temporary tap path with local target archives'
 fi
 
+# Homebrew's post-install sandbox resolves the home base from the actual
+# account, rather than the fixture's HOME override. Make only this disposable
+# Formula verbose and assert the shared resync summary; the layout proof checks
+# the narrow writable-state declaration carried by the real Formula.
+sed -i '' 's/print_stdout: false, print_stderr: false/print_stdout: true, print_stderr: true/' "$formula"
+
+trust_status=0
+trust_output="$(brew_env trust --tap hemang11/homebrew-bash-god 2>&1)" || trust_status=$?
+if [ "$trust_status" -eq 0 ]; then
+  pass 'fixture trusts only its temporary Homebrew tap with the current Homebrew policy'
+else
+  fail 'fixture trusts only its temporary Homebrew tap with the current Homebrew policy'
+  printf '%s\n' "$trust_output"
+  exit 1
+fi
+
 install_status=0
 install_output="$(brew_env install --formula "$formula" --build-from-source 2>&1)" || install_status=$?
-if [ "$install_status" -eq 0 ] && [ -x "$fixture/bin/god" ]; then
-  pass 'Homebrew installs the Formula into the disposable Cellar and links god'
+installed_prefix="$(brew_env --prefix bash-god 2>/dev/null || :)"
+owner_marker="$installed_prefix/libexec/share/bash-god/package-owner"
+if [ "$install_status" -eq 0 ] && [ -x "$fixture/bin/god" ] && \
+   [ "$(command cat "$owner_marker" 2>/dev/null)" = homebrew ] && \
+   contains "$install_output" '5 of 5 detectable services refreshed.'; then
+  pass 'Homebrew installs, links god, and invokes the all-service discovery sync'
 else
-  fail 'Homebrew installs the Formula into the disposable Cellar and links god'
+  fail 'Homebrew installs, links god, and invokes the all-service discovery sync'
   printf '%s\n' "$install_output"
+fi
+
+owner_uninstall_status=0
+owner_uninstall_output="$(HOME="$fixture/brew-home" GOD_COLOR=never "$fixture/bin/god" --uninstall 2>&1)" || owner_uninstall_status=$?
+if [ "$owner_uninstall_status" -eq 2 ] && contains "$owner_uninstall_output" 'brew uninstall bash-god'; then
+  pass 'the installed Homebrew runtime directs removal back to Homebrew'
+else
+  fail 'the installed Homebrew runtime directs removal back to Homebrew'
+  printf '%s\n' "$owner_uninstall_output"
 fi
 
 version_output="$(HOME="$fixture/home" XDG_CONFIG_HOME="$fixture/config" XDG_CACHE_HOME="$fixture/user-cache" XDG_STATE_HOME="$fixture/state" XDG_DATA_HOME="$fixture/data" BASH_GOD_SKIP_INITIAL_RESYNC=1 GOD_COLOR=never "$fixture/bin/god" --version 2>&1)"

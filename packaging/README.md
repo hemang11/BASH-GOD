@@ -56,6 +56,13 @@ installer writes that ownership record only after it has verified and activated 
 user-owned prefix. A package-manager layout must never receive that record: Homebrew, `dpkg`, or
 another owner remains responsible for its own upgrade and removal.
 
+The Homebrew formula also performs the same best-effort discovery initialization as the direct
+installer. Its quiet post-install `god --resync` writes only the invoking user's normal XDG state,
+so the first search can offer reviewed executable rows without asking the operator to hydrate the
+cache manually. Missing optional clients and discovery failures never fail a Homebrew install.
+Its private runtime also records Homebrew as the installation owner, so BASH_GOD directs removal to
+`brew uninstall bash-god` instead of offering the direct-release removal command.
+
 The package-owned `bin/god` is a real file. It finds the internal runtime relative to its installation
 prefix, while its launcher resolution also supports an external symlink that points to that managed
 file. The internal launcher retains the repository-relative module layout already exercised by the

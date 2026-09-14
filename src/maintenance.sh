@@ -306,6 +306,18 @@ _god_maintenance_is_managed() {
     [ "$actual_manifest" = "$expected_manifest" ]
 }
 
+_god_maintenance_package_owner() {
+  local marker owner
+
+  marker="$_god_maintenance_metadata_dir/package-owner"
+  [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+  IFS= read -r owner < "$marker" || return 1
+  case "$owner" in
+    homebrew) printf '%s\n' "$owner" ;;
+    *) return 1 ;;
+  esac
+}
+
 _god_maintenance_cache_ttl() {
   local ttl
 
@@ -492,12 +504,16 @@ EOF
 }
 
 _god_maintenance_uninstall() {
-  local current
+  local current owner
 
   current=$1
   if ! _god_maintenance_is_managed "$current"; then
     printf 'BASH_GOD: this is not a managed GitHub Release installation.\n' >&2
-    printf 'Use the owning package manager, or remove a sourced development checkout manually.\n' >&2
+    owner="$(_god_maintenance_package_owner 2>/dev/null)"
+    case "$owner" in
+      homebrew) printf 'Remove this Homebrew installation with: brew uninstall bash-god\n' >&2 ;;
+      *) printf 'Use the owning package manager, or remove a sourced development checkout manually.\n' >&2 ;;
+    esac
     return 2
   fi
 
