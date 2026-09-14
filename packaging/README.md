@@ -9,16 +9,31 @@ smaller than the source repository and never includes personal shell aliases or 
 ## Scope
 
 This workflow supports an unprivileged, real-file installation under an absolute prefix such as
-`$HOME/.local`. It does not publish Homebrew, RPM, or APT repository metadata and does not edit shell
-startup files.
+`$HOME/.local`. It builds the immutable runtime assets and the reviewed Homebrew formula input, but
+does not itself publish a tap, RPM, or APT repository and does not edit shell startup files.
 
 ## Implementation Summary
 
-The builder emits a runtime archive, a low-level standalone installer, the public `install.sh`
-bootstrap, and one SHA-256 file for each asset. The low-level installer snapshots and validates the
-supplied archive, probes the staged CLI, activates only allowlisted runtime files, and records a
-managed-install manifest. The public bootstrap resolves the latest GitHub Release and installs its
-checksum-verified archive.
+The builder emits four target-specific runtime archives, one narrow compatibility bridge archive, a
+low-level standalone installer, the public `install.sh` bootstrap, and one SHA-256 file for each
+asset. The low-level installer snapshots and validates the supplied archive, probes the staged CLI
+and native helper, activates only allowlisted runtime files, and records a managed-install manifest.
+The public bootstrap resolves the latest GitHub Release, detects one supported host target exactly,
+and installs its checksum-verified archive.
+
+Installed users never need Go. Release construction needs the Go version pinned in `go.mod`; source
+contributors may optionally build a repository-root helper with
+`go build -o god-tui ./cmd/god-tui`. Without that development helper, a source checkout correctly
+uses the static search view.
+
+The supported direct-install matrix is deliberately explicit:
+
+```text
+darwin-amd64   darwin-arm64   linux-amd64   linux-arm64
+```
+
+Unknown `uname` values and a mismatched target archive fail before extraction. The installer never
+chooses an architecture by approximation.
 
 ## Architecture / Flow
 
@@ -26,58 +41,87 @@ checksum-verified archive.
 bash-god-VERSION/
   bin/god                              relocatable prefix launcher
   lib/bash-god/god                     repository CLI launcher
-  lib/bash-god/bash_god/*.sh           eleven runtime modules, including discovery and execution
-  lib/bash-god/bash_god/catalog/*/service.god
-  share/bash-god/install-manifest      direct-GitHub ownership metadata
+  lib/bash-god/tui-manifest            shell/helper version and protocol contract
+  lib/bash-god/src/*.sh                eight core runtime modules
+  lib/bash-god/src/ui/*.sh             six terminal UI modules, including the optional helper adapter
+  lib/bash-god/catalog/*/service.god
+  libexec/bash-god/god-tui             one selected native helper
   share/licenses/bash-god/LICENSE
+  share/licenses/bash-god/THIRD_PARTY_NOTICES.md
 ```
 
-The installed `bin/god` must be a real file, not a symlink. It finds the internal runtime relative to
-its installation prefix, while the internal launcher retains the repository-relative module layout
-already exercised by the main smoke suite.
+The archive itself intentionally does **not** contain `share/bash-god/install-manifest`. The direct
+installer writes that ownership record only after it has verified and activated an archive under a
+user-owned prefix. A package-manager layout must never receive that record: Homebrew, `dpkg`, or
+another owner remains responsible for its own upgrade and removal.
+
+The package-owned `bin/god` is a real file. It finds the internal runtime relative to its installation
+prefix, while its launcher resolution also supports an external symlink that points to that managed
+file. The internal launcher retains the repository-relative module layout already exercised by the
+main smoke suite.
 
 Release assets are kept separate from the installed runtime:
 
 ```text
-bash-god-VERSION.tar.gz
-bash-god-VERSION.tar.gz.sha256
+bash-god-VERSION-darwin-amd64.tar.gz
+bash-god-VERSION-darwin-amd64.tar.gz.sha256
+bash-god-VERSION-darwin-arm64.tar.gz
+bash-god-VERSION-darwin-arm64.tar.gz.sha256
+bash-god-VERSION-linux-amd64.tar.gz
+bash-god-VERSION-linux-amd64.tar.gz.sha256
+bash-god-VERSION-linux-arm64.tar.gz
+bash-god-VERSION-linux-arm64.tar.gz.sha256
 install-runtime.sh
 install-runtime.sh.sha256
 install.sh
 install.sh.sha256
 ```
 
+`bash-god-VERSION.tar.gz` and its checksum are also published as a **legacy update bridge**. It
+contains all four helpers and is accepted only because an older direct-GitHub installation requests
+the old unsuffixed archive name before it can run the target-aware updater. The new bootstrap and all
+new runtime updates request only the target-specific archive. The current installer detects the host
+and extracts exactly one matching helper from the bridge; this bridge is not treated as an
+architecture-independent normal package.
+
 ## Verification
 
 ```bash
 ./packaging/build-runtime.sh
 ./packaging/tests/runtime-package-smoke.sh
+./packaging/tests/homebrew-layout-smoke.sh
+./packaging/tests/homebrew-install-smoke.sh
 ./packaging/tests/install-smoke.sh
 ./packaging/tests/maintenance-smoke.sh
 ```
 
-The builder writes all six listed assets beneath `dist/`. It refuses to overwrite existing files or
-dangling symlinks. The package smoke test builds from scratch, verifies both executable script
-assets and all relevant checksums, installs beneath a temporary prefix, compares the exact 22-file
-installed allowlist, checks for credential material, exercises navigation/search/tree views with an
-empty environment, rejects malformed packages and checksums, and verifies that replacement requires
-`--replace` and retains a usable previous runtime. The install and maintenance suites use isolated
-homes and prefixes; they never change a real installation.
+The builder writes 14 assets beneath `dist/`: five archives, seven corresponding checksum files,
+and the two executable installer scripts. It
+refuses to overwrite existing files or dangling symlinks. The package smoke test builds from
+scratch, verifies every checksum and helper mode, installs beneath temporary prefixes without Go on
+`PATH`, checks the private-helper manifest through normal and symlinked launchers, verifies the
+legacy bridge selection, rejects a foreign/unknown target before activation, rejects malformed
+packages and checksums, and verifies that replacement retains the paired prior runtime and helper.
+It also builds twice and requires byte-identical release assets. The install and maintenance suites
+use isolated homes and prefixes; they never change a real installation. The Homebrew installation
+suite uses an isolated temporary Cellar and confirms install, launcher resolution, and uninstall.
 
 ## Automated Quality Gates
 
-`.github/workflows/smoke.yml` runs the main command-memory suite and all three packaging suites for
-every pull request into `main`, every update to `main`, and every merge-queue candidate. The stable
-required-check name is **Full smoke suite**.
+`.github/workflows/smoke.yml` runs the main command-memory suite and packaging suites for every pull
+request into `main`, every update to `main`, and every merge-queue candidate. Its required checks
+are **Full smoke suite**, **Native terminal runtime (linux-arm64)**, **Native terminal runtime
+(darwin-amd64)**, and **Native terminal runtime (darwin-arm64)**.
 
 `.github/workflows/release.yml` runs only for `v*` tags. It calls the same smoke workflow first,
-checks that `vVERSION` matches `bash_god/core.sh`, rejects a tagged commit that is not contained in
-`main`, builds the six release assets, and creates the GitHub Release only after every check passes.
+checks that `vVERSION` matches `src/core.sh`, rejects a tagged commit that is not contained in
+`main`, installs the pinned Go toolchain, cross-compiles the four helpers, builds the target assets
+and bridge, and creates the GitHub Release only after every check passes.
 
-GitHub Actions cannot make its own check mandatory. In the repository's `main` branch ruleset,
-enable **Require a pull request before merging** and require the **Full smoke suite** status check.
-That one-time repository setting turns the workflow result into the merge gate; without it, the
-workflow reports failures but GitHub can still allow a merge.
+GitHub Actions cannot make its own checks mandatory. The repository's `main` protection requires a
+pull request, one approval, resolved conversations, an up-to-date base, and all four contexts above.
+It also applies to administrators, so a failed native terminal job cannot be bypassed by merging
+directly to `main`.
 
 ## Public Installation
 
@@ -88,9 +132,10 @@ bash <(curl -fsSL https://github.com/hemang11/BASH-GOD/releases/latest/download/
 ```
 
 `install.sh` uses `$HOME/.local` by default, refuses unrelated or partial installations, downloads
-the archive and low-level installer, verifies both against their release checksums, and performs no
-downgrade. Re-running it while current is idempotent. An older direct-GitHub installation is upgraded
-through the same verified replacement path.
+the matching target archive and low-level installer, verifies both against their release checksums,
+and performs no downgrade. Re-running it while current is idempotent. An older direct-GitHub
+installation is upgraded through the verified unsuffixed bridge exactly once; after that, the
+installed target-aware updater uses the matching archive directly.
 
 The checksum beside `install.sh` remains a release asset for pinned/manual workflows. The one-line
 bootstrap itself is trusted through HTTPS, then verifies every subsequently downloaded executable
@@ -100,8 +145,8 @@ and archive before activation.
 
 ```bash
 ./packaging/install-runtime.sh --prefix /absolute/test/prefix \
-  dist/bash-god-VERSION.tar.gz \
-  dist/bash-god-VERSION.tar.gz.sha256
+  dist/bash-god-VERSION-OS-ARCH.tar.gz \
+  dist/bash-god-VERSION-OS-ARCH.tar.gz.sha256
 ```
 
 The default prefix is `$HOME/.local`. The installer does not use `sudo`, edit shell startup files, or
@@ -113,8 +158,8 @@ Build or download and verify the newer release assets, then pass `--replace` to 
 
 ```bash
 ./install-runtime.sh --replace --prefix /absolute/prefix \
-  bash-god-NEW_VERSION.tar.gz \
-  bash-god-NEW_VERSION.tar.gz.sha256
+  bash-god-NEW_VERSION-OS-ARCH.tar.gz \
+  bash-god-NEW_VERSION-OS-ARCH.tar.gz.sha256
 ```
 
 The installer accepts only a managed existing runtime, retains it in a uniquely named backup
@@ -134,23 +179,28 @@ cache, state, and data. It refuses source checkouts and package-manager-owned in
 
 ## Release Checklist
 
-1. Merge through a pull request whose required **Full smoke suite** check passed.
-2. Confirm the version in `bash_god/core.sh` and push the matching immutable tag `vVERSION` from
+1. Merge through a pull request whose four required smoke and native-terminal checks passed.
+2. Confirm the version in `src/core.sh` and push the matching immutable tag `vVERSION` from
    `main`.
-3. Let the release workflow repeat every smoke suite, build the clean assets, and publish the archive,
-   both installers, public bootstrap, and all three `.sha256` files.
-4. Download the public assets and repeat an isolated-prefix install before announcing the release.
+3. Let the release workflow repeat every smoke suite, build the clean target assets and bridge, and
+   publish both installers, public bootstrap, and every `.sha256` file.
+4. Render `Formula/bash-god.rb` from the published target archives, then review, install, test, and
+   publish it in `hemang11/homebrew-tap`.
+5. Download the host target asset and repeat an isolated-prefix install before announcing the release.
 
-The same prefix layout can later be consumed by RPM and DEB packaging without changing the runtime
-catalog or dispatcher. This first release supports direct real-file installation only; Homebrew's
-standard symlinked Cellar launcher needs separate formula work and is not supported yet.
+The Homebrew tap installs the same staged runtime without changing the catalog or dispatcher.
+Debian packaging remains deferred; see the [installation and support architecture](../docs/architecture/installation-and-support-architecture.md)
+for the ownership and launcher contract.
 
 ## Limitations / Risks
 
 - Checksums provide integrity for assets downloaded from the same trusted GitHub release; they are
   not a separate code-signing identity.
-- Release archives are not reproducible byte-for-byte because tar ownership and timestamps are not
-  normalized yet.
+- The helper is cross-compiled on the release runner. The package suite executes the current host's
+  helper and validates every other target's archive structure, mode, manifest, and checksum; native
+  PTY behavior on each target still requires native release-CI evidence.
+- Release archives normalize file ordering, timestamps, and ownership; the package suite compares
+  two clean builds byte-for-byte.
 - An interrupted upgrade retains the previous runtime and attempts to restore it when activation has
   not completed; the installer prints any path that still needs manual recovery.
 - The bootstrap and automatic check depend on GitHub's latest-release redirect; the low-level

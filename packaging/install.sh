@@ -101,6 +101,23 @@ _bash_god_bootstrap_verify() {
   [ "$expected" = "$actual" ] || _bash_god_bootstrap_die "SHA-256 verification failed for $name"
 }
 
+# Direct releases contain native god-tui helpers. Keep selection explicit and
+# bounded: unknown uname values are an install error, never an architecture
+# guess or a download that may happen to work.
+_bash_god_bootstrap_platform() {
+  local os arch
+
+  os="$(uname -s 2>/dev/null)" || return 1
+  arch="$(uname -m 2>/dev/null)" || return 1
+  case "$os:$arch" in
+    Darwin:x86_64|Darwin:amd64) printf '%s\n' darwin-amd64 ;;
+    Darwin:arm64|Darwin:aarch64) printf '%s\n' darwin-arm64 ;;
+    Linux:x86_64|Linux:amd64) printf '%s\n' linux-amd64 ;;
+    Linux:arm64|Linux:aarch64) printf '%s\n' linux-arm64 ;;
+    *) return 1 ;;
+  esac
+}
+
 _bash_god_bootstrap_fetch_latest_version() {
   local effective tag version
 
@@ -134,7 +151,7 @@ _bash_god_bootstrap_installed_version() {
         value=$candidate
         ;;
     esac
-  done < "$_bash_god_bootstrap_runtime/bash_god/core.sh"
+  done < "$_bash_god_bootstrap_runtime/src/core.sh"
   [ -n "$value" ] || return 1
   printf '%s\n' "$value"
 }
@@ -148,7 +165,7 @@ _bash_god_bootstrap_is_managed() {
     [ ! -L "$_bash_god_bootstrap_runtime" ] &&
     [ -d "$_bash_god_bootstrap_runtime" ] &&
     [ -x "$_bash_god_bootstrap_runtime/god" ] &&
-    [ -r "$_bash_god_bootstrap_runtime/bash_god/core.sh" ]
+    [ -r "$_bash_god_bootstrap_runtime/src/core.sh" ]
 }
 
 _bash_god_bootstrap_state() {
@@ -209,7 +226,7 @@ _bash_god_bootstrap_seed_update_cache() {
 }
 
 _bash_god_bootstrap_main() {
-  local latest state relation replace release_url archive archive_checksum installer installer_checksum
+  local latest state relation replace platform release_url archive archive_checksum installer installer_checksum
 
   if [ -n "${BASH_GOD_PREFIX:-}" ]; then
     _bash_god_bootstrap_prefix=$BASH_GOD_PREFIX
@@ -240,6 +257,8 @@ _bash_god_bootstrap_main() {
   done
   command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || \
     _bash_god_bootstrap_die 'sha256sum or shasum is required to install BASH_GOD'
+  platform="$(_bash_god_bootstrap_platform)" || \
+    _bash_god_bootstrap_die 'unsupported host platform; supported targets are darwin-amd64, darwin-arm64, linux-amd64, and linux-arm64.'
 
   _bash_god_bootstrap_launcher="$_bash_god_bootstrap_prefix/bin/god"
   _bash_god_bootstrap_runtime="$_bash_god_bootstrap_prefix/lib/bash-god"
@@ -271,13 +290,13 @@ _bash_god_bootstrap_main() {
     _bash_god_bootstrap_die 'could not create a private download directory'
   chmod 0700 "$_bash_god_bootstrap_download_dir"
   release_url="https://github.com/${_bash_god_bootstrap_repository}/releases/download/v${latest}"
-  archive="$_bash_god_bootstrap_download_dir/bash-god-${latest}.tar.gz"
+  archive="$_bash_god_bootstrap_download_dir/bash-god-${latest}-${platform}.tar.gz"
   archive_checksum="${archive}.sha256"
   installer="$_bash_god_bootstrap_download_dir/install-runtime.sh"
   installer_checksum="${installer}.sha256"
 
-  _bash_god_bootstrap_download "$release_url/bash-god-${latest}.tar.gz" "$archive"
-  _bash_god_bootstrap_download "$release_url/bash-god-${latest}.tar.gz.sha256" "$archive_checksum"
+  _bash_god_bootstrap_download "$release_url/bash-god-${latest}-${platform}.tar.gz" "$archive"
+  _bash_god_bootstrap_download "$release_url/bash-god-${latest}-${platform}.tar.gz.sha256" "$archive_checksum"
   _bash_god_bootstrap_download "$release_url/install-runtime.sh" "$installer"
   _bash_god_bootstrap_download "$release_url/install-runtime.sh.sha256" "$installer_checksum"
   _bash_god_bootstrap_verify "$installer" "$installer_checksum"

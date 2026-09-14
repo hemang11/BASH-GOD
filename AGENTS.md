@@ -1,10 +1,10 @@
 # BASH_GOD agent entry point
 
 Before changing this repository, read [`CONTRIBUTING.md`](CONTRIBUTING.md), then read
-[`bash_god/AGENTS.md`](bash_god/AGENTS.md) in full.
+[`catalog/AGENTS.md`](catalog/AGENTS.md) in full.
 
 For catalog work, start with the contribution guide's decision table and use its fake-only
-verification workflow. Keep service knowledge in `bash_god/catalog/<service>/service.god`; do not
+verification workflow. Keep service knowledge in `catalog/<service>/service.god`; do not
 add a service-specific dispatcher, resolver, renderer, or execution branch.
 
 For shared-engine work, make the behavior metadata-driven across every service, update the relevant

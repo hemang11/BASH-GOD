@@ -1,0 +1,421 @@
+#!/usr/bin/env bash
+
+# Cross-service execution rollout regression checks. Every apparent native
+# executable in this file is a fixture under a temporary directory. The
+# picker is stubbed before selection, so this suite cannot contact a cluster,
+# cloud account, MongoDB deployment, HTTP endpoint, host utility, or network.
+
+set -u
+set -o pipefail
+
+test_file="${BASH_SOURCE[0]}"
+test_dir="$(CDPATH= cd "$(dirname "$test_file")" 2>/dev/null && pwd -P)" || exit 1
+project_dir="$(CDPATH= cd "$test_dir/.." 2>/dev/null && pwd -P)" || exit 1
+
+k8s_catalog="$project_dir/catalog/k8s/service.god"
+aws_catalog="$project_dir/catalog/aws/service.god"
+mongo_catalog="$project_dir/catalog/mongo/service.god"
+elasticsearch_catalog="$project_dir/catalog/elasticsearch/service.god"
+general_catalog="$project_dir/catalog/general/service.god"
+network_catalog="$project_dir/catalog/network/service.god"
+
+fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-execution-rollout.XXXXXX" 2>/dev/null)" || exit 1
+trap 'rm -rf -- "$fixture_root"' EXIT
+
+failures=0
+checks=0
+
+pass() {
+  checks=$((checks + 1))
+  printf 'ok %02d - %s\n' "$checks" "$1"
+}
+
+fail() {
+  checks=$((checks + 1))
+  failures=$((failures + 1))
+  printf 'not ok %02d - %s\n' "$checks" "$1" >&2
+}
+
+has_exact_line() {
+  printf '%s\n' "$1" | LC_ALL=C grep -Fqx "$2"
+}
+
+export_field() {
+  local exported wanted
+
+  exported=$1
+  wanted=$2
+  printf '%s\n' "$exported" | LC_ALL=C awk -F "$(printf '\t')" -v wanted="$wanted" '
+    $1 == wanted { print $2; exit }
+  '
+}
+
+catalog_directive_count() {
+  LC_ALL=C awk -v directive="$2" 'index($0, directive) == 1 { count++ } END { print count + 0 }' "$1"
+}
+
+# Returns GROUP<TAB>ENTRY for the first native @run whose leading command is
+# PROBE. This keeps the fixture focused on a copyable catalog spelling rather
+# than a particular row number.
+location_for_leading_probe() {
+  LC_ALL=C awk -v probe="$2" '
+    /^@group[[:space:]]+/ {
+      group = $0
+      sub(/^@group[[:space:]]+/, "", group)
+      entry = 0
+      next
+    }
+    /^@command[[:space:]]+/ { entry++; field = ""; run = ""; next }
+    /^@run$/ { field = "run"; next }
+    /^@end$/ {
+      if (run ~ ("^" probe "([[:space:]]|$)")) {
+        print group "\t" entry
+        exit
+      }
+      field = ""
+      next
+    }
+    /^@/ { field = ""; next }
+    field == "run" && /[^[:space:]]/ { run = $0; field = ""; next }
+  ' "$1"
+}
+
+location_for_title() {
+  LC_ALL=C awk -v wanted="$2" '
+    /^@group[[:space:]]+/ {
+      group = $0
+      sub(/^@group[[:space:]]+/, "", group)
+      entry = 0
+      next
+    }
+    /^@command[[:space:]]+/ {
+      entry++
+      title = $0
+      sub(/^@command[[:space:]]+/, "", title)
+      if (title == wanted) {
+        print group "\t" entry
+        exit
+      }
+    }
+  ' "$1"
+}
+
+mkdir -p \
+  "$fixture_root/home" \
+  "$fixture_root/config/bash-god" \
+  "$fixture_root/state" \
+  "$fixture_root/fake/k8s" \
+  "$fixture_root/fake/aws" \
+  "$fixture_root/fake/mongo" \
+  "$fixture_root/fake/elasticsearch" \
+  "$fixture_root/fake/path" || exit 1
+
+native_log="$fixture_root/native.log"
+discovery_log="$fixture_root/discovery.log"
+: > "$native_log"
+: > "$discovery_log"
+
+# Each discoverable-service fixture permits only its declared version probe.
+# Any selected catalog command would be recorded and fail the assertions below.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "kubectl|%s\\n" "$*" >> "$BASH_GOD_EXECUTION_ROLLOUT_NATIVE_LOG"' \
+  'if [ "$1" = version ] && [ "$2" = --client ]; then' \
+  '  printf "Client Version: v1.28.7\\n"' \
+  '  exit 0' \
+  'fi' \
+  'exit 97' > "$fixture_root/fake/k8s/kubectl"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "aws|%s\\n" "$*" >> "$BASH_GOD_EXECUTION_ROLLOUT_NATIVE_LOG"' \
+  'if [ "$1" = --version ]; then' \
+  '  printf "aws-cli/2.36.34 fixture\\n" >&2' \
+  '  exit 0' \
+  'fi' \
+  'exit 97' > "$fixture_root/fake/aws/aws"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "mongosh|%s\\n" "$*" >> "$BASH_GOD_EXECUTION_ROLLOUT_NATIVE_LOG"' \
+  'if [ "$1" = --version ]; then' \
+  '  printf "mongosh 2.4.1 fixture\\n"' \
+  '  exit 0' \
+  'fi' \
+  'exit 97' > "$fixture_root/fake/mongo/mongosh"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "curl|%s\\n" "$*" >> "$BASH_GOD_EXECUTION_ROLLOUT_NATIVE_LOG"' \
+  'if [ "$1" = -fsS ] && [ "$2" = --connect-timeout ] && [ "$3" = 1 ] && [ "$4" = --max-time ] && [ "$5" = 2 ] && [ "$6" = http://localhost:9200/ ]; then' \
+  '  printf "{\\\"version\\\":{\\\"number\\\":\\\"8.15.2\\\"}}\\n"' \
+  '  exit 0' \
+  'fi' \
+  'exit 97' > "$fixture_root/fake/elasticsearch/curl"
+chmod 0700 \
+  "$fixture_root/fake/k8s/kubectl" \
+  "$fixture_root/fake/aws/aws" \
+  "$fixture_root/fake/mongo/mongosh" \
+  "$fixture_root/fake/elasticsearch/curl" || exit 1
+
+# PATH-service stubs must never be invoked merely to offer the rich picker.
+for tool in curl hostname ssh; do
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf "%s|%s\\n" "$0" "$*" >> "$BASH_GOD_EXECUTION_ROLLOUT_NATIVE_LOG"' \
+    'exit 97' > "$fixture_root/fake/path/$tool"
+  chmod 0700 "$fixture_root/fake/path/$tool" || exit 1
+done
+
+printf 'path=%s\n' "$fixture_root/fake/k8s" > "$fixture_root/config/bash-god/k8s.conf"
+printf 'path=%s\n' "$fixture_root/fake/aws" > "$fixture_root/config/bash-god/aws.conf"
+printf 'path=%s\n' "$fixture_root/fake/mongo" > "$fixture_root/config/bash-god/mongo.conf"
+printf 'path=%s\n' "$fixture_root/fake/elasticsearch" > "$fixture_root/config/bash-god/elasticsearch.conf"
+
+export HOME="$fixture_root/home"
+export XDG_CONFIG_HOME="$fixture_root/config"
+export XDG_STATE_HOME="$fixture_root/state"
+export BASH_GOD_EXECUTION_ROLLOUT_NATIVE_LOG="$native_log"
+
+# Source the real public modules once. No `god` route is invoked directly;
+# every behavior below is driven through public parser/discovery/resolver/
+# picker functions with the real catalogs.
+# shellcheck source=../BASH_GOD.sh
+. "$project_dir/BASH_GOD.sh" || exit 1
+
+if _god_validate_catalog "$k8s_catalog" >/dev/null 2>&1 && \
+   _god_validate_catalog "$aws_catalog" >/dev/null 2>&1 && \
+   _god_validate_catalog "$mongo_catalog" >/dev/null 2>&1 && \
+   _god_validate_catalog "$elasticsearch_catalog" >/dev/null 2>&1 && \
+   _god_validate_catalog "$general_catalog" >/dev/null 2>&1 && \
+   _god_validate_catalog "$network_catalog" >/dev/null 2>&1; then
+  pass 'all non-Kafka rollout catalogs validate before execution tests'
+else
+  fail 'all non-Kafka rollout catalogs validate before execution tests'
+fi
+
+elasticsearch_commands="$(catalog_directive_count "$elasticsearch_catalog" '@command')"
+elasticsearch_since="$(catalog_directive_count "$elasticsearch_catalog" '@since')"
+if [ "$(_god_catalog_execution_mode "$elasticsearch_catalog")" = DISCOVER ] && \
+   _god_catalog_has_discover "$elasticsearch_catalog" && \
+   [ "$elasticsearch_commands" -gt 0 ] && \
+   [ "$elasticsearch_since" = "$elasticsearch_commands" ]; then
+  pass 'Elasticsearch declares discovery and a compatibility floor for every command'
+else
+  fail 'Elasticsearch declares discovery and a compatibility floor for every command'
+fi
+
+# Discovery and resolution contract: the source catalog stays copyable while
+# the rich execution model gets exactly one absolute rewrite of its declared
+# leading probe. No arbitrary later/bare word may be rewritten.
+services=(k8s aws mongo elasticsearch)
+catalogs=("$k8s_catalog" "$aws_catalog" "$mongo_catalog" "$elasticsearch_catalog")
+probes=(kubectl aws mongosh curl)
+fake_dirs=("$fixture_root/fake/k8s" "$fixture_root/fake/aws" "$fixture_root/fake/mongo" "$fixture_root/fake/elasticsearch")
+versions=(1.28.7 2.36.34 2.4.1 8.15.2)
+
+index=0
+while [ "$index" -lt "${#services[@]}" ]; do
+  service="${services[$index]}"
+  catalog="${catalogs[$index]}"
+  probe="${probes[$index]}"
+  fake_dir="${fake_dirs[$index]}"
+  expected_version="${versions[$index]}"
+
+  if _god_discover_resolve "$service" "$catalog" && \
+     [ "$(_god_discover_path "$service")" = "$fake_dir" ] && \
+     [ "$(_god_discover_version "$service")" = "$expected_version" ]; then
+    pass "$service discovery uses its configured fake tool path"
+  else
+    fail "$service discovery uses its configured fake tool path"
+  fi
+
+  location="$(location_for_leading_probe "$catalog" "$probe")"
+  IFS="$(printf '\t')" read -r group entry <<< "$location"
+  exported=''
+  [ -n "${group:-}" ] && [ -n "${entry:-}" ] && exported="$(_god_catalog_command_export "$catalog" "$group" "$entry")"
+  static_run="$(export_field "$exported" RUN)"
+  model=''
+  [ -n "$static_run" ] && model="$(_god_resolve_command "$service" "$catalog" "$group" "$entry" "$fake_dir" '')"
+  display="$(export_field "$model" DISPLAY)"
+
+  case "$static_run" in
+    "$probe"|"$probe "*) static_copyable=1 ;;
+    *) static_copyable=0 ;;
+  esac
+  case "$display" in
+    "$fake_dir/$probe"|"$fake_dir/$probe "*) resolved_leading=1 ;;
+    *) resolved_leading=0 ;;
+  esac
+  if [ "$static_copyable" = 1 ] && [ "$resolved_leading" = 1 ]; then
+    pass "$service keeps the catalog command bare and rewrites its rich preview"
+  else
+    fail "$service keeps the catalog command bare and rewrites its rich preview"
+  fi
+
+  leading="$(_god_resolve_rewrite_paths "$probe inspect" "$fake_dir" "$probe")"
+  later="$(_god_resolve_rewrite_paths "echo $probe; $probe inspect" "$fake_dir" "$probe")"
+  if [ "$leading" = "$fake_dir/$probe inspect" ] && [ "$later" = "echo $probe; $probe inspect" ]; then
+    pass "$service rewrites only the declared leading probe"
+  else
+    fail "$service rewrites only the declared leading probe"
+  fi
+
+  index=$((index + 1))
+done
+
+if has_exact_line "$(command cat "$native_log")" 'kubectl|version --client' && \
+   has_exact_line "$(command cat "$native_log")" 'aws|--version' && \
+   has_exact_line "$(command cat "$native_log")" 'mongosh|--version' && \
+   has_exact_line "$(command cat "$native_log")" 'curl|-fsS --connect-timeout 1 --max-time 2 http://localhost:9200/' && \
+   [ "$(LC_ALL=C wc -l < "$native_log" | tr -d '[:space:]')" = 4 ]; then
+  pass 'discoverable-service fixtures received version probes only'
+else
+  fail 'discoverable-service fixtures received version probes only'
+fi
+
+native_log_before_path_offer="$(command cat "$native_log")"
+
+# A fake TTY/picker makes the normal rich-search route observable without
+# selecting any command. PATH catalogs must carry an empty execution path and
+# must not consult discovery or launch a native stub while producing a preview.
+path_offer_output="$(
+  PATH="$fixture_root/fake/path:$PATH" \
+  BASH_GOD_EXECUTION_ROLLOUT_NATIVE_LOG="$native_log" \
+  BASH_GOD_EXECUTION_ROLLOUT_DISCOVERY_LOG="$discovery_log" \
+  GOD_COLOR=never TERM=xterm-256color \
+  bash -c '
+    . "$1/BASH_GOD.sh" || exit 1
+
+    _god_stdout_is_terminal() { return 0; }
+    _god_tui_available() { return 0; }
+    _god_discover_is_stale() {
+      printf "stale:%s\\n" "$1" >> "$BASH_GOD_EXECUTION_ROLLOUT_DISCOVERY_LOG"
+      return 1
+    }
+    _god_discover_path() {
+      printf "path:%s\\n" "$1" >> "$BASH_GOD_EXECUTION_ROLLOUT_DISCOVERY_LOG"
+      return 1
+    }
+    _god_discover_resolve() {
+      printf "resolve:%s\\n" "$1" >> "$BASH_GOD_EXECUTION_ROLLOUT_DISCOVERY_LOG"
+      return 2
+    }
+    _god_tui_select() {
+      local rows provider label
+
+      rows=$1
+      provider=$5
+      "$provider" 1 || return 1
+      label="$(_god_menu_field "$rows" 1 1)"
+      printf "RICH|%s|path=%s|%s|%s\\n" "$3" "${rich_execution_paths[0]:-}" "$label" "$_god_menu_provider_detail"
+      _god_tui_action=CANCEL
+      _god_tui_index=-1
+      return 0
+    }
+
+    _god_search "current hostname" smart list general "" 0 || exit $?
+    _god_search "HTTP response headers" smart list network "" 0
+  ' _ "$project_dir"
+)"
+
+if printf '%s\n' "$path_offer_output" | LC_ALL=C grep -Fq 'RICH|GENERAL SEARCH RESULTS|path=|Show the current hostname|hostname' && \
+   printf '%s\n' "$path_offer_output" | LC_ALL=C grep -Fq 'RICH|NETWORK SEARCH RESULTS|path=|Show HTTP response headers|curl -sS -I <url>' && \
+   [ ! -s "$discovery_log" ] && \
+   [ "$(command cat "$native_log")" = "$native_log_before_path_offer" ]; then
+  pass 'PATH services offer rich previews without discovery or native execution'
+else
+  fail 'PATH services offer rich previews without discovery or native execution'
+fi
+
+# Elasticsearch now uses the same discovered service path as the other
+# versioned catalogs. Its URL placeholder is embedded inside single quotes,
+# which is the easy case to regress into string interpolation rather than a
+# positional bash -c argument.
+es_location="$(location_for_title "$elasticsearch_catalog" 'Count documents in an index')"
+IFS="$(printf '\t')" read -r es_group es_entry <<< "$es_location"
+es_pending_model="$(_god_resolve_command elasticsearch "$elasticsearch_catalog" "$es_group" "$es_entry" "$fixture_root/fake/elasticsearch" '')"
+es_bound_model="$(_god_resolve_command elasticsearch "$elasticsearch_catalog" "$es_group" "$es_entry" "$fixture_root/fake/elasticsearch" 'index "orders-v1"')"
+es_expected_template=$'TEMPLATE\t'"$fixture_root/fake/elasticsearch/curl -sS 'http://localhost:9200/'\"\${1}\"'/_count?pretty'"
+if has_exact_line "$es_pending_model" $'PENDING\t<index_name>\t<index_name>\torders-v1\tIndex or alias whose documents should be counted' && \
+   has_exact_line "$es_bound_model" "$es_expected_template" && \
+   has_exact_line "$es_bound_model" $'VALUE\torders-v1' && \
+   has_exact_line "$es_bound_model" $'DISPLAY\t'"$fixture_root/fake/elasticsearch/curl -sS 'http://localhost:9200/orders-v1/_count?pretty'"; then
+  pass 'Elasticsearch discovery models rewrite curl and keep URL values positional'
+else
+  fail 'Elasticsearch discovery models rewrite curl and keep URL values positional'
+fi
+
+# A URI uses two placeholders inside one double-quoted shell word. The model
+# must execute them as positional arguments rather than pass literal template
+# text to the native client.
+mongo_uri_template='printf "%s\n" "mongodb://<host>:27017/<database>"'
+mongo_uri_template="$(_god_resolve_replace_template_span "$mongo_uri_template" '<host>' 1)"
+mongo_uri_template="$(_god_resolve_replace_template_span "$mongo_uri_template" '<database>' 2)"
+mongo_uri_result="$(bash -c "$mongo_uri_template" god-run localhost example_database)"
+if [ "$mongo_uri_result" = 'mongodb://localhost:27017/example_database' ]; then
+  pass 'quoted URI placeholders become executable positional arguments'
+else
+  fail 'quoted URI placeholders become executable positional arguments'
+fi
+
+# A discovered service with no usable cached path must take the established
+# static screen even when a fake TTY says the rich picker is available.
+unresolved_log="$fixture_root/unresolved.log"
+: > "$unresolved_log"
+unresolved_output="$(
+  PATH="$fixture_root/fake/path:$PATH" \
+  BASH_GOD_EXECUTION_ROLLOUT_NATIVE_LOG="$native_log" \
+  BASH_GOD_EXECUTION_ROLLOUT_UNRESOLVED_LOG="$unresolved_log" \
+  GOD_COLOR=never TERM=xterm-256color \
+  bash -c '
+    . "$1/BASH_GOD.sh" || exit 1
+
+    _god_stdout_is_terminal() { return 0; }
+    _god_tui_available() { return 0; }
+    _god_discover_is_stale() {
+      printf "stale:%s\\n" "$1" >> "$BASH_GOD_EXECUTION_ROLLOUT_UNRESOLVED_LOG"
+      return 0
+    }
+    _god_discover_path() {
+      printf "path:%s\\n" "$1" >> "$BASH_GOD_EXECUTION_ROLLOUT_UNRESOLVED_LOG"
+      return 1
+    }
+    _god_tui_select() {
+      printf "picker\\n" >> "$BASH_GOD_EXECUTION_ROLLOUT_UNRESOLVED_LOG"
+      return 99
+    }
+
+    _god_search "list pods" smart list k8s "" 0
+  ' _ "$project_dir"
+)"
+
+if printf '%s\n' "$unresolved_output" | LC_ALL=C grep -Fq 'K8S SEARCH RESULTS' && \
+   printf '%s\n' "$unresolved_output" | LC_ALL=C grep -Fq 'MATCHING OPERATIONS' && \
+   has_exact_line "$(command cat "$unresolved_log")" 'stale:k8s' && \
+   ! LC_ALL=C grep -Fq 'picker' "$unresolved_log" && \
+   ! LC_ALL=C grep -Fq 'path:k8s' "$unresolved_log" && \
+   [ "$(command cat "$native_log")" = "$native_log_before_path_offer" ]; then
+  pass 'unresolved discovery stays on the static matching-operations screen'
+else
+  fail 'unresolved discovery stays on the static matching-operations screen'
+fi
+
+# An executable catalog has no independent non-executable state: these rows are
+# ordinary runnable commands once their service is resolved.
+mongo_location="$(location_for_title "$mongo_catalog" 'Show replica-set status')"
+aws_location="$(location_for_title "$aws_catalog" 'Verify the instance role without exported keys')"
+IFS="$(printf '\t')" read -r mongo_group mongo_entry <<< "$mongo_location"
+IFS="$(printf '\t')" read -r aws_group aws_entry <<< "$aws_location"
+mongo_export="$(_god_catalog_command_export "$mongo_catalog" "$mongo_group" "$mongo_entry")"
+aws_export="$(_god_catalog_command_export "$aws_catalog" "$aws_group" "$aws_entry")"
+if has_exact_line "$mongo_export" $'RUNNABLE\t1' && \
+   has_exact_line "$aws_export" $'RUNNABLE\t1'; then
+  pass 'Mongo and AWS executable rows export runnable commands'
+else
+  fail 'Mongo and AWS executable rows export runnable commands'
+fi
+
+if [ "$failures" -ne 0 ]; then
+  printf '%s of %s execution-rollout checks failed\n' "$failures" "$checks" >&2
+  exit 1
+fi
+
+printf '%s execution-rollout checks passed\n' "$checks"

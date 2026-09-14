@@ -6,7 +6,7 @@ set -o pipefail
 test_file=${BASH_SOURCE[0]}
 test_dir="$(CDPATH= cd "$(dirname "$test_file")" 2>/dev/null && pwd -P)" || exit 1
 repo_dir="$(CDPATH= cd "$test_dir/../.." 2>/dev/null && pwd -P)" || exit 1
-version="$(LC_ALL=C awk -F"'" '/^_BASH_GOD_VERSION=/ { print $2; exit }' "$repo_dir/bash_god/core.sh")"
+version="$(LC_ALL=C awk -F"'" '/^_BASH_GOD_VERSION=/ { print $2; exit }' "$repo_dir/src/core.sh")"
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-install-smoke.XXXXXX")" || exit 1
 trap 'rm -rf -- "$temporary"' EXIT HUP INT TERM
 
@@ -28,12 +28,25 @@ contains() {
   case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac
 }
 
+platform() {
+  case "$(uname -s):$(uname -m)" in
+    Darwin:x86_64|Darwin:amd64) printf '%s\n' darwin-amd64 ;;
+    Darwin:arm64|Darwin:aarch64) printf '%s\n' darwin-arm64 ;;
+    Linux:x86_64|Linux:amd64) printf '%s\n' linux-amd64 ;;
+    Linux:arm64|Linux:aarch64) printf '%s\n' linux-arm64 ;;
+    *) return 1 ;;
+  esac
+}
+
 assets="$temporary/assets"
 prefix="$temporary/prefix"
 test_home="$temporary/home"
 fake_bin="$temporary/bin"
 mkdir -p "$assets" "$test_home" "$fake_bin"
 test_path="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
+host_platform="$(platform)" || exit 1
+curl_log="$temporary/curl.log"
+: > "$curl_log"
 
 if "$repo_dir/packaging/build-runtime.sh" "$assets" >/dev/null; then
   pass 'release assets build for the public installer test'
@@ -66,6 +79,7 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+[ -z "${BASH_GOD_CURL_LOG:-}" ] || printf '%s\n' "$url" >> "$BASH_GOD_CURL_LOG"
 case "$url" in
   */releases/latest)
     printf 'https://github.com/hemang11/BASH-GOD/releases/tag/v%s' "$BASH_GOD_TEST_VERSION"
@@ -86,6 +100,8 @@ install_output="$(
   BASH_GOD_PREFIX="$prefix" \
   BASH_GOD_TEST_ASSETS="$assets" \
   BASH_GOD_TEST_VERSION="$version" \
+  BASH_GOD_CURL_LOG="$curl_log" \
+  BASH_GOD_SKIP_INITIAL_RESYNC=1 \
   PATH="$test_path" \
   bash "$repo_dir/packaging/install.sh"
 )"
@@ -97,6 +113,13 @@ if contains "$install_output" 'Checksums verified.' && \
   pass 'one public command installs the latest verified release'
 else
   fail 'one public command installs the latest verified release'
+fi
+
+if LC_ALL=C grep -Fqx "https://github.com/hemang11/BASH-GOD/releases/download/v$version/bash-god-$version-$host_platform.tar.gz" "$curl_log" && \
+   LC_ALL=C grep -Fqx "https://github.com/hemang11/BASH-GOD/releases/download/v$version/bash-god-$version-$host_platform.tar.gz.sha256" "$curl_log"; then
+  pass 'public bootstrap downloads only the explicit host-target archive'
+else
+  fail 'public bootstrap downloads only the explicit host-target archive'
 fi
 
 manifest="$(command cat "$prefix/share/bash-god/install-manifest")"
@@ -113,6 +136,7 @@ current_output="$(
   BASH_GOD_PREFIX="$prefix" \
   BASH_GOD_TEST_ASSETS="$assets" \
   BASH_GOD_TEST_VERSION="$version" \
+  BASH_GOD_SKIP_INITIAL_RESYNC=1 \
   PATH="$test_path" \
   bash "$repo_dir/packaging/install.sh"
 )"
@@ -127,13 +151,14 @@ old_version='0.0.1.2'
 LC_ALL=C awk -v old="$old_version" '
   /^_BASH_GOD_VERSION=/ { print "_BASH_GOD_VERSION=\047" old "\047"; next }
   { print }
-' "$prefix/lib/bash-god/bash_god/core.sh" > "$temporary/old-core.sh"
-mv "$temporary/old-core.sh" "$prefix/lib/bash-god/bash_god/core.sh"
+' "$prefix/lib/bash-god/src/core.sh" > "$temporary/old-core.sh"
+mv "$temporary/old-core.sh" "$prefix/lib/bash-god/src/core.sh"
 upgrade_output="$(
   HOME="$test_home" \
   BASH_GOD_PREFIX="$prefix" \
   BASH_GOD_TEST_ASSETS="$assets" \
   BASH_GOD_TEST_VERSION="$version" \
+  BASH_GOD_SKIP_INITIAL_RESYNC=1 \
   PATH="$test_path" \
   bash "$repo_dir/packaging/install.sh"
 )"
@@ -155,6 +180,7 @@ HOME="$test_home" \
 BASH_GOD_PREFIX="$partial_prefix" \
 BASH_GOD_TEST_ASSETS="$assets" \
 BASH_GOD_TEST_VERSION="$version" \
+BASH_GOD_SKIP_INITIAL_RESYNC=1 \
 PATH="$test_path" \
 bash "$repo_dir/packaging/install.sh" >/dev/null 2>&1 || partial_status=$?
 if [ "$partial_status" -eq 1 ] && [ ! -e "$partial_prefix/lib/bash-god" ]; then

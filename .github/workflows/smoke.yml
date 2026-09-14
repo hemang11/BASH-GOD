@@ -20,31 +20,127 @@ concurrency:
 jobs:
   smoke:
     name: Full smoke suite
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
 
+      - name: Install the approved Go toolchain
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
       - name: Install the supported interactive shell
         run: |
           sudo apt-get update
-          sudo apt-get install --yes zsh
+          sudo apt-get install --yes zsh expect
 
       - name: Validate shell syntax
         run: |
-          bash -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh packaging/*.sh packaging/tests/*.sh
-          zsh -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh packaging/*.sh packaging/tests/*.sh
+          bash -n BASH_GOD.sh god src/*.sh src/ui/*.sh tests/*.sh packaging/*.sh packaging/homebrew/*.sh packaging/tests/*.sh docs/demo/*.sh
+          zsh -n BASH_GOD.sh god src/*.sh src/ui/*.sh tests/*.sh packaging/*.sh packaging/homebrew/*.sh packaging/tests/*.sh docs/demo/*.sh
 
       - name: Run command-memory smoke tests
-        run: bash bash_god/tests/smoke.sh
+        run: bash tests/smoke.sh
+
+      - name: Validate the terminal-helper prototype
+        run: |
+          go test ./...
+          go vet ./...
 
       - name: Run runtime-package smoke tests
         run: bash packaging/tests/runtime-package-smoke.sh
+
+      - name: Prove the Homebrew launcher layout
+        run: bash packaging/tests/homebrew-layout-smoke.sh
 
       - name: Run public-install smoke tests
         run: bash packaging/tests/install-smoke.sh
 
       - name: Run maintenance smoke tests
         run: bash packaging/tests/maintenance-smoke.sh
+
+  terminal-runtime:
+    name: Native terminal runtime (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `smoke` above is the native linux-amd64 R14 cell. These are the
+          # remaining released helper targets; cross-build archive inspection
+          # is intentionally not accepted as terminal-runtime evidence.
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin-amd64
+            runner: macos-15-intel
+          - target: darwin-arm64
+            runner: macos-14
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install the approved Go toolchain
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install real-PTY test dependencies
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Linux)
+              sudo apt-get update
+              sudo apt-get install --yes zsh expect
+              ;;
+            macOS)
+              brew install expect
+              command -v zsh >/dev/null
+              ;;
+            *)
+              printf 'Unsupported R14 runner OS: %s\n' "$RUNNER_OS" >&2
+              exit 1
+              ;;
+          esac
+          command -v expect >/dev/null
+
+      - name: Record native terminal-runtime facts
+        shell: bash
+        run: |
+          printf 'target=%s\n' '${{ matrix.target }}'
+          uname -s
+          uname -m
+          bash --version | head -n 1
+          zsh --version
+          go version
+          expect -v
+          printf 'TERM=%s\n' "${TERM:-unset}"
+          printf 'LANG=%s\n' "${LANG:-unset}"
+          printf 'LC_ALL=%s\n' "${LC_ALL:-unset}"
+          printf 'NO_COLOR=%s\n' "${NO_COLOR:-unset}"
+          ./god --version
+
+      - name: Validate source and helper contracts
+        shell: bash
+        run: |
+          bash -n BASH_GOD.sh god src/*.sh src/ui/*.sh tests/*.sh packaging/*.sh packaging/homebrew/*.sh packaging/tests/*.sh docs/demo/*.sh
+          zsh -n BASH_GOD.sh god src/*.sh src/ui/*.sh tests/*.sh packaging/*.sh packaging/homebrew/*.sh packaging/tests/*.sh docs/demo/*.sh
+          go test ./...
+          go vet ./...
+          GOD_COLOR=never zsh -f -c '. "$1/BASH_GOD.sh"; god general --tree >/dev/null' zsh "$PWD"
+
+      - name: Run source and installed real-PTY acceptance suites
+        shell: bash
+        run: |
+          bash tests/tui-adapter-smoke.sh
+          bash tests/tui-pty-smoke.sh
+          bash packaging/tests/installed-tui-pty-smoke.sh
+
+      - name: Prove a disposable Homebrew installation on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash packaging/tests/homebrew-install-smoke.sh

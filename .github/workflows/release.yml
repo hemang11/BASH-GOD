@@ -27,11 +27,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install the approved Go toolchain for native release helpers
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
       - name: Verify the release tag
         id: release
         shell: bash
         run: |
-          version="$(LC_ALL=C awk -F"'" '/^_BASH_GOD_VERSION=/ { print $2; exit }' bash_god/core.sh)"
+          version="$(LC_ALL=C awk -F"'" '/^_BASH_GOD_VERSION=/ { print $2; exit }' src/core.sh)"
           if [ -z "$version" ] || [ "$GITHUB_REF_NAME" != "v$version" ]; then
             printf '::error::Tag %s does not match BASH_GOD version %s.\n' "$GITHUB_REF_NAME" "${version:-unknown}"
             exit 1
@@ -61,6 +66,14 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "dist/bash-god-$VERSION.tar.gz" \
             "dist/bash-god-$VERSION.tar.gz.sha256" \
+            "dist/bash-god-$VERSION-darwin-amd64.tar.gz" \
+            "dist/bash-god-$VERSION-darwin-amd64.tar.gz.sha256" \
+            "dist/bash-god-$VERSION-darwin-arm64.tar.gz" \
+            "dist/bash-god-$VERSION-darwin-arm64.tar.gz.sha256" \
+            "dist/bash-god-$VERSION-linux-amd64.tar.gz" \
+            "dist/bash-god-$VERSION-linux-amd64.tar.gz.sha256" \
+            "dist/bash-god-$VERSION-linux-arm64.tar.gz" \
+            "dist/bash-god-$VERSION-linux-arm64.tar.gz.sha256" \
             'dist/install-runtime.sh' \
             'dist/install-runtime.sh.sha256' \
             'dist/install.sh' \

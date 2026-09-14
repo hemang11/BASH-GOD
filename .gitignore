@@ -1,6 +1,8 @@
 .DS_Store
+/god-tui
 dist/
 graphify-out/
+spec/
 private/
 *.local
 *.swp

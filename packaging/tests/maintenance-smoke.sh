@@ -6,8 +6,8 @@ set -o pipefail
 test_file=${BASH_SOURCE[0]}
 test_dir="$(CDPATH= cd "$(dirname "$test_file")" 2>/dev/null && pwd -P)" || exit 1
 repo_dir="$(CDPATH= cd "$test_dir/../.." 2>/dev/null && pwd -P)" || exit 1
-maintenance="$repo_dir/bash_god/maintenance.sh"
-version="$(LC_ALL=C awk -F"'" '/^_BASH_GOD_VERSION=/ { print $2; exit }' "$repo_dir/bash_god/core.sh")"
+maintenance="$repo_dir/src/maintenance.sh"
+version="$(LC_ALL=C awk -F"'" '/^_BASH_GOD_VERSION=/ { print $2; exit }' "$repo_dir/src/core.sh")"
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/bash-god-maintenance-smoke.XXXXXX")" || exit 1
 trap 'rm -rf -- "$temporary"' EXIT HUP INT TERM
 
@@ -97,6 +97,30 @@ else
   fail 'accepted update installs only the newer release and asks for a fresh invocation'
 fi
 
+target_update_output="$(bash -c '
+  . "$1"
+  _god_maintenance_prefix="$2"
+  _god_maintenance_platform() { printf "linux-arm64\\n"; }
+  _god_maintenance_verify() { :; }
+  _god_maintenance_download() {
+    printf "%s\\n" "$1"
+    case "$2" in
+      */install-runtime.sh)
+        printf "%s\\n" "#!/usr/bin/env bash" "exit 0" > "$2"
+        ;;
+      *) : > "$2" ;;
+    esac
+  }
+  _god_maintenance_install_update "$3"
+  command rm -rf -- "$_god_maintenance_download_dir"
+' _ "$maintenance" "$temporary/target-prefix" "$newer_version" 2>&1)"
+if contains "$target_update_output" "bash-god-$newer_version-linux-arm64.tar.gz" && \
+   ! contains "$target_update_output" "bash-god-$newer_version.tar.gz"; then
+  pass 'new runtime updater requests only its explicit target archive'
+else
+  fail 'new runtime updater requests only its explicit target archive'
+fi
+
 cached_output="$(bash -c '
   . "$1"
   _god_maintenance_is_managed() { return 0; }
@@ -124,6 +148,7 @@ run_in_test_home() {
     XDG_CACHE_HOME='' \
     XDG_STATE_HOME='' \
     XDG_DATA_HOME='' \
+    BASH_GOD_SKIP_INITIAL_RESYNC=1 \
     "$@"
 }
 
@@ -150,7 +175,7 @@ printf 'keep\n' > "$test_home/.config/keep/value"
 
 printf 'unexpected=metadata\n' >> "$prefix/share/bash-god/install-manifest"
 altered_status=0
-run_in_test_home bash "$prefix/lib/bash-god/bash_god/maintenance.sh" uninstall "$version" >/dev/null 2>&1 || altered_status=$?
+run_in_test_home bash "$prefix/lib/bash-god/src/maintenance.sh" uninstall "$version" >/dev/null 2>&1 || altered_status=$?
 if [ "$altered_status" -eq 2 ] && [ -x "$prefix/bin/god" ]; then
   pass 'uninstall refuses an inexact ownership manifest'
 else
@@ -163,7 +188,7 @@ cancel_output="$(run_in_test_home bash -c '
   . "$1"
   _god_maintenance_menu() { _god_maintenance_menu_choice=0; }
   _god_maintenance_main uninstall "$2"
-' _ "$prefix/lib/bash-god/bash_god/maintenance.sh" "$version")"
+' _ "$prefix/lib/bash-god/src/maintenance.sh" "$version")"
 if contains "$cancel_output" 'Uninstall cancelled. Nothing was changed.' && \
    contains "$cancel_output" "REMOVE BASH_GOD $version" && \
    contains "$cancel_output" 'PATHS TO REMOVE' && \
@@ -177,10 +202,11 @@ purge_output="$(run_in_test_home bash -c '
   . "$1"
   _god_maintenance_menu() { _god_maintenance_menu_choice=1; }
   _god_maintenance_main uninstall "$2"
-' _ "$prefix/lib/bash-god/bash_god/maintenance.sh" "$version")"
+' _ "$prefix/lib/bash-god/src/maintenance.sh" "$version")"
 if contains "$purge_output" 'BASH_GOD was completely removed.' && \
    [ ! -e "$prefix/bin/god" ] && \
    [ ! -e "$prefix/lib/bash-god" ] && \
+   [ ! -e "$prefix/libexec/bash-god" ] && \
    [ -z "$(command find "$prefix/lib" -maxdepth 1 -name 'bash-god.backup-*' -print 2>/dev/null)" ] && \
    [ ! -e "$prefix/share/licenses/bash-god" ] && \
    [ ! -e "$prefix/share/bash-god" ] && \
