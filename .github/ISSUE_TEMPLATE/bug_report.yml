@@ -1,0 +1,68 @@
+name: Bug report
+description: Report reproducible BASH_GOD behavior without sharing secrets.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve BASH_GOD. Please remove credentials, tokens, private hostnames,
+        production payloads, and customer data before submitting this report.
+  - type: input
+    id: version
+    attributes:
+      label: BASH_GOD version
+      description: Run `god --version`.
+      placeholder: "BASH_GOD 0.0.0"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and architecture
+      description: Include the OS release and CPU architecture.
+      placeholder: "macOS 15.0 arm64"
+    validations:
+      required: true
+  - type: input
+    id: shell
+    attributes:
+      label: Shell and terminal context
+      description: Include shell version, terminal emulator, and whether this is local, SSH, or tmux.
+      placeholder: "bash 5.2 · xterm-256color · SSH"
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - Direct GitHub Release installer
+        - Source checkout
+        - Other or unknown
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and steps to reproduce
+      description: Provide the smallest safe sequence that reproduces the problem. Redact sensitive values.
+      placeholder: |
+        1. Run `god ...`
+        2. Press ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+      description: Include a short, redacted output excerpt when it helps.
+    validations:
+      required: true
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, tokens, private hostnames, customer data, and production payloads.
+          required: true

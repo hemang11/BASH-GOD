@@ -1,6 +1,6 @@
 # Contributing catalog knowledge to BASH_GOD
 
-> **Agent start here:** read this guide, then read [`bash_god/AGENTS.md`](bash_god/AGENTS.md).
+> **Agent start here:** read this guide, then read [`catalog/AGENTS.md`](catalog/AGENTS.md).
 > Treat the catalog as data. Do not add a service-specific execution, renderer, or dispatcher branch
 > to make one command work.
 
@@ -32,7 +32,7 @@ service-specific code branch. Those require an explicit request.
 One catalog owns one service:
 
 ```text
-bash_god/catalog/<service>/service.god
+catalog/<service>/service.god
 ```
 
 The catalog is parsed as inert text. Shared modules validate, search, render, discover, resolve, and
@@ -69,7 +69,7 @@ and discovery facts; it never supplies terminal behavior.
 
 ## Recipe: add or update a command
 
-1. Find the closest service and group with `rg -n '^@group|^@command' bash_god/catalog/<service>/service.god`.
+1. Find the closest service and group with `rg -n '^@group|^@command' catalog/<service>/service.god`.
 2. Reuse the group unless the operation creates a clear new navigational category.
 3. Add one complete record. Keep `@run` to **one physical line**.
 4. Use placeholders for environment-specific values; never put credentials, tokens, or authenticated
@@ -84,6 +84,8 @@ Use this shape:
 @command Show consumer-group offsets and lag
 @mode MODERN
 @since 0.10.1
+@requires
+tool | service:kafka-consumer-groups.sh | present
 @description
 Shows committed offsets, log-end offsets, and lag for one consumer group.
 @run
@@ -110,16 +112,20 @@ Review lag before resetting offsets or changing membership.
   command look safer.
 - Every record in an executable catalog must be a real child-process command. `cd`, `export`,
   `unset`, `source`, and raw in-client snippets do not meet that contract.
+- Every current executable production catalog uses Requirements Schema 1. Give every new or modified
+  executable production catalog `@environment 1` and one non-empty `@requires` block per command;
+  do not add a partial opt-in. Schema 0 remains parser-compatible only for historical/test fixtures
+  and must not be used as a shortcut around reviewed requirements.
 
 ## Recipe: add a new service
 
-1. Create exactly `bash_god/catalog/<service>/service.god`.
+1. Create exactly `catalog/<service>/service.god`.
 2. Add `@title`, a top-level `@description`, exactly one execution choice, and one connection
    declaration before the first group.
 3. Add focused groups and records using the required metadata above.
 4. Validate the catalog before changing shared code. If it appears in `god --tree` and search after
    validation, the route is already wired.
-5. Add a fake-only catalog test and register it from `bash_god/tests/smoke.sh` when the service uses
+5. Add a fake-only catalog test and register it from `tests/smoke.sh` when the service uses
    discovery or introduces a new generic execution shape.
 
 ### Execution choices
@@ -207,16 +213,61 @@ views and never offers the execution picker.
 Compatibility is per command. Never replace it with a service-wide "N commands hidden" decision or
 hide the version information only in a header.
 
+## Requirements Schema 1
+
+Schema 1 is a whole-service contract. All current executable production
+catalogs use it. When the rich picker is available, a Schema-1 record enters
+it only when fresh bounded facts make it eligible; known-ineligible and
+unknown rows remain knowledge only. Static search, tree, and details preserve
+every row and do not collect facts merely to decorate output. Do not add UI or
+service-specific policy for this metadata.
+
+Place one `@environment 1` block after top-level discovery or PATH execution,
+connection, and sync metadata and before the first group. It may contain only
+scalar defaults: `os | local | any|linux|darwin|freebsd`,
+`context | execution | local|remote`, and
+`shell | local | none|posix|bash`.
+
+An opted-in catalog gives every record exactly one non-empty `@requires` block
+after `@mode` and any `@risk`, `@since`, `@until`, or `@intent` metadata, and
+before `@description`, `@run`, parameters, optional flags, or notes. Each
+requirement is exactly `KIND | SUBJECT | VALUE`:
+
+- `os` and `shell` describe local or remote facts; remote values are additive
+  and require remote execution context.
+- `context | execution | local|remote` replaces the service default.
+- `tool` names one bare `local:NAME`, `service:NAME`, or `remote:NAME` and
+  uses `present`, `gnu`, or `bsd`. `service:NAME` is valid only in a discovery
+  catalog and checks that exact sibling in the resolved directory; a successful
+  probe never implies that another service executable exists.
+- `tool-version` adds dotted numeric constraints to an already named tool,
+  using `>=`, `>`, `=`, `<=`, or `<`.
+
+List every external program in a reviewed pipeline or command substitution.
+The parser never infers tools from `@run` and never translates a Linux
+spelling into a macOS one. A remote requirement stays unknown until a future
+approved explicit fact source supplies it; BASH_GOD never SSHes merely to
+learn it. A Schema-1 `LOCAL` record still must meet declared OS, tool, and
+shell requirements.
+
+Read the canonical
+[catalog contract architecture](docs/architecture/catalog-contract-architecture.md)
+before proposing a full-service migration. Add generic parser, fact-collector,
+and fake-only coverage before expanding its vocabulary; do not create
+service-specific requirements.
+
 ## Shared-code change gate
 
-Before editing `core.sh`, `render.sh`, `search.sh`, `menu.sh`, `discover.sh`, `resolve.sh`, or
-`execute.sh`, answer this:
+Before editing `src/core.sh`, `src/ui/render.sh`, `src/search.sh`, `src/interaction.sh`,
+`src/ui/menu.sh`, `src/ui/input.sh`, `src/ui/tui.sh`, `src/discover.sh`, `src/eligibility.sh`,
+`src/resolve.sh`, `src/execute.sh`,
+`cmd/god-tui/`, or `internal/tui/`, answer this:
 
 > Would the same behavior be correct for Kafka, MongoDB, Kubernetes, AWS, Elasticsearch, general,
 > and network catalogs when their metadata requests it?
 
 If the answer is no, the change belongs in catalog data or needs product direction. If yes, keep the
-engine generic and update all affected shared tests plus `bash_god/AGENTS.md` and architecture docs.
+engine generic and update all affected shared tests plus `catalog/AGENTS.md` and architecture docs.
 
 ## Preview and verification
 
@@ -233,11 +284,16 @@ GOD_COLOR=never ./god <service> --details
 Then validate without reaching a real service:
 
 ```bash
-bash -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh
-zsh -n BASH_GOD.sh god bash_god/*.sh bash_god/tests/*.sh
-bash bash_god/tests/smoke.sh
+bash -n BASH_GOD.sh god src/*.sh src/ui/*.sh tests/*.sh packaging/*.sh packaging/homebrew/*.sh packaging/tests/*.sh docs/demo/*.sh
+zsh -n BASH_GOD.sh god src/*.sh src/ui/*.sh tests/*.sh packaging/*.sh packaging/homebrew/*.sh packaging/tests/*.sh docs/demo/*.sh
+GOTOOLCHAIN=auto go test ./...
+GOTOOLCHAIN=auto go vet ./...
+bash tests/smoke.sh
 git diff --check
 ```
+
+The smoke suite includes real-PTY coverage and requires `expect`; CI installs it explicitly. Missing
+Go, zsh, or `expect` is a coverage failure rather than permission to claim terminal parity.
 
 For a new discovery catalog, its test must use a temporary fake client and isolated `HOME`,
 `XDG_CONFIG_HOME`, and `XDG_STATE_HOME`. Prove all of these:
@@ -258,10 +314,10 @@ Give an implementation agent this brief with the target service and desired comm
 in:
 
 ```text
-Read CONTRIBUTING.md and bash_god/AGENTS.md before editing.
+Read CONTRIBUTING.md and catalog/AGENTS.md before editing.
 
 Task: <add/update service or command>
-Catalog target: bash_god/catalog/<service>/service.god
+Catalog target: catalog/<service>/service.god
 Execution model: <DISCOVER | PATH | DISPLAY ONLY>
 Compatibility facts: <verified since/until values, or explicitly unknown>
 Risks: <READ ONLY | WRITE | WARN | DELETE>
@@ -271,7 +327,7 @@ Constraints:
 - Every executable row must be a real command; no copy-only or raw shell snippets.
 - Keep @run to one physical line and use placeholders for environment values.
 - Add/adjust only fake-only tests; never call a real native service command.
-- Show the exact files changed and run the focused suite plus bash_god/tests/smoke.sh and git diff --check.
+- Show the exact files changed and run the focused suite plus tests/smoke.sh and git diff --check.
 - Do not commit, tag, publish, or push.
 ```
 
@@ -288,6 +344,7 @@ synthetic clients for discovery and execution-flow checks.
 - Discovery confirms a client and caches a version response. Endpoint discovery runs only during
   explicit resync, never rendering; a local listener remains a candidate until a reviewed command is
   run by the operator.
-- Rich execution needs Bash, a capable TTY, and a bare Perl executable for terminal key reads; it
-  must not require optional Perl modules. The static command view remains the correct fallback
-  for unresolved services, non-TTY output, and unsupported terminals.
+- Rich execution needs Bash, a capable TTY, and a protocol-compatible `god-tui` helper. The helper
+  owns browsing only; native editing, prompts, and child execution resume only after its terminal
+  state is released. The static command view remains the correct fallback for unresolved services,
+  non-TTY output, unsupported terminals, or a missing helper.

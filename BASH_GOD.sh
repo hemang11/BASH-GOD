@@ -14,10 +14,10 @@ fi
 _bash_god_load_failed=0
 if [ -n "$_bash_god_entry_file" ]; then
   _bash_god_entry_dir="$(CDPATH= cd "$(dirname "$_bash_god_entry_file")" 2>/dev/null && pwd -P)"
-  if [ -r "$_bash_god_entry_dir/bash_god/core.sh" ]; then
-    . "$_bash_god_entry_dir/bash_god/core.sh" || _bash_god_load_failed=1
+  if [ -r "$_bash_god_entry_dir/src/core.sh" ]; then
+    . "$_bash_god_entry_dir/src/core.sh" || _bash_god_load_failed=1
   else
-    printf 'BASH_GOD: cannot read %s/bash_god/core.sh\n' "$_bash_god_entry_dir" >&2
+    printf 'BASH_GOD: cannot read %s/src/core.sh\n' "$_bash_god_entry_dir" >&2
     _bash_god_load_failed=1
   fi
 else

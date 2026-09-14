@@ -1,0 +1,886 @@
+#!/usr/bin/env bash
+
+# BASH_GOD value resolution. Turns a catalog @run template plus the user's
+# free-text query into two things: a human-readable DISPLAY command for the
+# confirm screen, and an EXECUTE template with every user-influenced value
+# lifted out to a positional parameter so it is never interpolated into shell
+# syntax (execute.sh substitutes those values as arguments, not text).
+#
+# The engine here knows mechanisms (keyword buckets, placeholder syntax); it
+# never special-cases kafka or any other service name.
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  set -o nounset
+  set -o pipefail
+fi
+
+_god_resolve_dir="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)" || \
+  _god_resolve_dir=''
+if [ -n "$_god_resolve_dir" ] && [ -z "$(type -t _god_catalog_command_export 2>/dev/null)" ] && \
+   [ -r "$_god_resolve_dir/catalog.sh" ]; then
+  # shellcheck source=catalog.sh
+  . "$_god_resolve_dir/catalog.sh" || exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Pure string transforms: same input always gives same output, no filesystem
+# or terminal access.
+# ---------------------------------------------------------------------------
+
+# _god_resolve_rewrite_paths RUN EXECUTION_PATH [DISCOVER_PROBES] [SELECTED_TOOL]
+#
+# A leading `./tool` becomes `<execution_path>/tool`; `../config/...` is
+# relative to that same bin directory, not the caller's cwd, so it becomes
+# `<execution_path>/../config/...`. A discovered catalog may declare an
+# ordered family of native probes (for example, `mongosh` then legacy `mongo`).
+# A catalog's ordered probe family declares compatible client spellings: when
+# one is the first word of a non-LOCAL record, it becomes the discovered
+# family member at `<execution_path>/selected-tool`. No other bare command is
+# rewritten. A record with no execution path (service not resolved, or @mode
+# LOCAL) is returned unchanged.
+_god_resolve_rewrite_paths() {
+  local run execution_path discover_probes selected_tool discover_probe token out
+  local -a tokens
+
+  run=$1
+  execution_path=$2
+  discover_probes=${3:-}
+  selected_tool=${4:-}
+  [ -n "$execution_path" ] || { printf '%s\n' "$run"; return 0; }
+
+  # Probes are grammar-validated bare executable names. A declared probe
+  # family is an explicit catalog assertion that the selected member can run
+  # its client rows, so use that selected member rather than leaking a stale
+  # sibling spelling from the catalog into the caller's PATH.
+  while IFS= read -r discover_probe; do
+    [ -n "$discover_probe" ] || continue
+    case "$run" in
+      "$discover_probe"|"$discover_probe "*)
+        [ -n "$selected_tool" ] || selected_tool=$discover_probe
+        if [ -x "$execution_path/$selected_tool" ]; then
+          run="${execution_path}/${selected_tool}${run#"$discover_probe"}"
+        fi
+        break
+        ;;
+    esac
+  done <<< "$discover_probes"
+
+  IFS=' ' read -r -a tokens <<< "$run"
+  out=''
+  for token in "${tokens[@]}"; do
+    case "$token" in
+      ./*) token="${execution_path}/${token#./}" ;;
+      ../*) token="${execution_path}/${token}" ;;
+    esac
+    out="${out:+$out }$token"
+  done
+  printf '%s\n' "$out"
+}
+
+# _god_resolve_rewrite_endpoint RUN TARGET PORT
+#
+# Catalog text stays copyable with its default authority. Once explicit resync
+# has cached an endpoint authority, only the reviewed runtime model rewrites
+# the exact catalog default: either localhost:<port> or <host>:<port>. The
+# latter keeps URI-shaped catalog commands tied to the same cached target as
+# flag-shaped commands. This deliberately does not rewrite arbitrary hosts,
+# URLs, or user-provided values.
+_god_resolve_rewrite_endpoint() {
+  local run target port default_target placeholder_target
+
+  run=$1
+  target=$2
+  port=$3
+  [ -n "$target" ] && [ -n "$port" ] || { printf '%s\n' "$run"; return 0; }
+  default_target="localhost:$port"
+  placeholder_target="<host>:$port"
+  run="${run//"$default_target"/$target}"
+  printf '%s\n' "${run//"$placeholder_target"/$target}"
+}
+
+# _god_resolve_endpoint_target_parts TARGET
+#
+# Emits HOST<TAB>PORT for the validated authority cached by discovery. URI
+# syntax keeps brackets around IPv6 through _god_resolve_rewrite_endpoint;
+# native --host flags receive the bare IPv6 host they expect. Parsing here is
+# intentionally independent from discovery so a hand-edited state cache cannot
+# turn a reviewed command template into shell syntax.
+_god_resolve_endpoint_target_parts() {
+  local target
+
+  target=$1
+  LC_ALL=C awk '
+    /^[A-Za-z0-9._-]+:[0-9]+$/ {
+      host = $0
+      sub(/:[0-9]+$/, "", host)
+      port = $0
+      sub(/^.*:/, "", port)
+      if ((port + 0) >= 1 && (port + 0) <= 65535) print host "\t" port
+      else exit 1
+      exit
+    }
+    /^\[[0-9A-Fa-f:.]+\]:[0-9]+$/ {
+      host = $0
+      sub(/^\[/, "", host)
+      sub(/\]:[0-9]+$/, "", host)
+      port = $0
+      sub(/^.*\]:/, "", port)
+      if ((port + 0) >= 1 && (port + 0) <= 65535) print host "\t" port
+      else exit 1
+      exit
+    }
+    { exit 1 }
+  ' <<< "$target"
+}
+
+# _god_resolve_harvest QUERY
+#
+# What ranking ignores: quoted phrases and ALL_CAPS/underscored words are
+# name-like; bare integers (including negative) are numeric. Printed in the
+# order encountered as NAME\t<value> or NUM\t<value> lines. WORDS contains one
+# normalized copy of the query for all later keyword checks.
+_god_resolve_harvest() {
+  GOD_RESOLVE_QUERY="$1" LC_ALL=C awk 'BEGIN {
+    text = ENVIRON["GOD_RESOLVE_QUERY"]
+    sq = sprintf("%c", 39)
+    dq = sprintf("%c", 34)
+
+    normalized = tolower(text)
+    gsub(/[^a-z0-9]+/, " ", normalized)
+    print "WORDS\t" normalized
+
+    # Pull quoted phrases out first so their contents are not re-split and
+    # re-classified as bare words below.
+    pattern = dq "[^" dq "]*" dq
+    while (match(text, pattern)) {
+      value = substr(text, RSTART + 1, RLENGTH - 2)
+      if (value != "") print "NAME\t" value
+      text = substr(text, 1, RSTART - 1) " " substr(text, RSTART + RLENGTH)
+    }
+    pattern = sq "[^" sq "]*" sq
+    while (match(text, pattern)) {
+      value = substr(text, RSTART + 1, RLENGTH - 2)
+      if (value != "") print "NAME\t" value
+      text = substr(text, 1, RSTART - 1) " " substr(text, RSTART + RLENGTH)
+    }
+
+    count = split(text, words, /[[:space:]]+/)
+    for (i = 1; i <= count; i++) {
+      word = words[i]
+      gsub(/^[^[:alnum:]_-]+/, "", word)
+      gsub(/[^[:alnum:]_-]+$/, "", word)
+      if (word == "") continue
+      if (word ~ /^-?[0-9]+$/) { print "NUM\t" word; continue }
+      if (word ~ /_/ && word ~ /^[A-Za-z0-9_]+$/) { print "NAME\t" word; continue }
+      if (word ~ /^[A-Z][A-Z0-9]*$/ && length(word) > 1) { print "NAME\t" word; continue }
+    }
+  }' </dev/null
+}
+
+# _god_resolve_query_has_word NORMALIZED_WORDS WORD
+_god_resolve_query_has_word() {
+  case "$1" in *" $2 "*) return 0 ;; esac
+  return 1
+}
+
+# _god_resolve_is_placeholder VALUE
+#
+# True when VALUE still contains catalog placeholder syntax, e.g.
+# <topic_name> or <topic_name>:<partition>. A concrete default like 20248 or
+# localhost:9092 is not a placeholder and needs no prompt.
+_god_resolve_is_placeholder() {
+  case "$1" in
+    *'<'*'>'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# _god_resolve_placeholder_spans TEXT
+#
+# Emits each distinct <placeholder> span in catalog text. Parameter metadata
+# normally maps every span to a useful prompt, but this fallback prevents an
+# incomplete record from ever reaching bash -c with shell metacharacters.
+_god_resolve_placeholder_spans() {
+  printf '%s\n' "$1" | LC_ALL=C awk '
+    {
+      text = $0
+      while (match(text, /<[^<>]+>/)) {
+        span = substr(text, RSTART, RLENGTH)
+        if (!seen[span]++) print span
+        text = substr(text, RSTART + RLENGTH)
+      }
+    }
+  '
+}
+
+# _god_resolve_placeholder_meaning SPAN
+_god_resolve_placeholder_meaning() {
+  local meaning
+
+  meaning=$1
+  meaning=${meaning#<}
+  meaning=${meaning%>}
+  meaning="${meaning//_/ }"
+  printf 'Value for %s\n' "$meaning"
+}
+
+# _god_resolve_replace_span TEXT SEARCH REPLACEMENT
+#
+# Literal (non-regex) replacement of every occurrence of SEARCH in TEXT. This
+# is for DISPLAY only, so a value is human-readable exactly where its catalog
+# placeholder appeared; execute templates use the quote-aware helper below.
+_god_resolve_replace_span() {
+  local text search replacement prefix remaining output
+
+  text=$1
+  search=$2
+  replacement=$3
+  [ -n "$search" ] || { printf '%s\n' "$text"; return 0; }
+  remaining=$text
+  output=''
+  while :; do
+    case "$remaining" in
+      *"$search"*) ;;
+      *) break ;;
+    esac
+    prefix=${remaining%%"$search"*}
+    remaining=${remaining#*"$search"}
+    output="${output}${prefix}${replacement}"
+  done
+  printf '%s%s\n' "$output" "$remaining"
+}
+
+# _god_resolve_quote_context PREFIX
+#
+# Reports the shell quote context immediately after PREFIX: unquoted, single,
+# or double. Catalog syntax is maintainer-authored, but user values must still
+# be lifted safely when a placeholder is embedded inside a quoted URL or JSON
+# body. The parser intentionally handles the POSIX quoting forms catalogs use;
+# it never evaluates catalog text or user input.
+_god_resolve_quote_context() {
+  local prefix state index character escaped length
+
+  prefix=$1
+  state=unquoted
+  escaped=0
+  index=0
+  length=${#prefix}
+  while [ "$index" -lt "$length" ]; do
+    character=${prefix:index:1}
+    case "$state" in
+      single)
+        [ "$character" = "'" ] && state=unquoted
+        ;;
+      double)
+        if [ "$escaped" = 1 ]; then
+          escaped=0
+        elif [ "$character" = '\\' ]; then
+          escaped=1
+        elif [ "$character" = '"' ]; then
+          state=unquoted
+        fi
+        ;;
+      *)
+        if [ "$escaped" = 1 ]; then
+          escaped=0
+        elif [ "$character" = '\\' ]; then
+          escaped=1
+        elif [ "$character" = "'" ]; then
+          state=single
+        elif [ "$character" = '"' ]; then
+          state=double
+        fi
+        ;;
+    esac
+    index=$((index + 1))
+  done
+  printf '%s\n' "$state"
+}
+
+# _god_resolve_replace_template_span TEXT SEARCH POSITION
+#
+# Replaces every placeholder span with a positional expansion while preserving
+# the surrounding catalog syntax. Unquoted spans use a quoted expansion;
+# single-quoted spans temporarily leave and re-enter single quotes; double
+# quoted spans use ${N} inside the existing double quotes. In all forms the
+# user-controlled value is an argument to bash -c, never parser input.
+_god_resolve_replace_template_span() {
+  local text search position prefix remaining output context replacement
+
+  text=$1
+  search=$2
+  position=$3
+  [ -n "$search" ] || { printf '%s\n' "$text"; return 0; }
+  remaining=$text
+  output=''
+  while :; do
+    case "$remaining" in
+      *"$search"*) ;;
+      *) break ;;
+    esac
+    prefix=${remaining%%"$search"*}
+    context="$(_god_resolve_quote_context "$output$prefix")"
+    case "$context" in
+      single)
+        # End the surrounding single quote, expand one positional argument
+        # under double quotes, then resume the original single-quoted text.
+        printf -v replacement '%s"${%s}"%s' "'" "$position" "'"
+        ;;
+      double)
+        printf -v replacement '${%s}' "$position"
+        ;;
+      *)
+        printf -v replacement '"${%s}"' "$position"
+        ;;
+    esac
+    remaining=${remaining#*"$search"}
+    output="${output}${prefix}${replacement}"
+  done
+  printf '%s%s\n' "$output" "$remaining"
+}
+
+# ---------------------------------------------------------------------------
+# I/O: a config file read and, for placeholders nothing else resolved, one
+# prompt per remaining value. Both degrade cleanly when unavailable.
+# ---------------------------------------------------------------------------
+
+# _god_resolve_config_file SERVICE
+#
+# Per-service defaults live beside discovery overrides, but no resolver code
+# knows the service name. `path=` remains discovery-only and is ignored here.
+_god_resolve_config_file() {
+  local service
+
+  service=$1
+  case "$service" in
+    ''|*[!A-Za-z0-9_-]*) return 1 ;;
+  esac
+  case "${XDG_CONFIG_HOME:-}" in
+    /*) printf '%s/bash-god/%s.conf\n' "${XDG_CONFIG_HOME%/}" "$service" ;;
+    *)
+      [ -n "${HOME:-}" ] || return 1
+      printf '%s/.config/bash-god/%s.conf\n' "$HOME" "$service"
+      ;;
+  esac
+}
+
+# _god_resolve_config_value SERVICE PARAMETER CATALOG_DEFAULT
+#
+# Reads an optional non-secret default for the displayed parameter. The key is
+# the parameter name without a leading `--`, normalized to lowercase. Secrets
+# and `path` are deliberately never auto-loaded: path belongs exclusively to
+# discovery and credentials must remain an explicit prompt/edit decision.
+_god_resolve_config_value() {
+  local service parameter fallback key file value
+
+  service=$1
+  parameter=$2
+  fallback=$3
+  key=${parameter#--}
+  key="$(printf '%s' "$key" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  case "$key" in
+    ''|*[!a-z0-9_-]*|path|*password*|*token*|*secret*|*credential*|*access-key*|*private-key*)
+      printf '%s\n' "$fallback"
+      return 0
+      ;;
+  esac
+
+  file="$(_god_resolve_config_file "$service")" || { printf '%s\n' "$fallback"; return 0; }
+  if [ -f "$file" ] && [ ! -L "$file" ]; then
+    value="$(LC_ALL=C awk -v wanted="$key" '
+      /^[[:space:]]*[^#[:space:]][^=]*=/ {
+        key = $0
+        sub(/=.*/, "", key)
+        sub(/^[[:space:]]+/, "", key)
+        sub(/[[:space:]]+$/, "", key)
+        if (tolower(key) != wanted) next
+        value = $0
+        sub(/^[^=]*=/, "", value)
+        sub(/^[[:space:]]+/, "", value)
+        sub(/[[:space:]]+$/, "", value)
+        print value
+        exit
+      }
+    ' "$file" 2>/dev/null)"
+  fi
+  printf '%s\n' "${value:-$fallback}"
+}
+
+# _god_resolve_prompt_value MEANING EXAMPLE
+#
+# One line on /dev/tty, MEANING as the prompt and EXAMPLE as the default when
+# the reply is empty. No /dev/tty (CI, cron, piped) returns EXAMPLE untouched.
+_god_resolve_prompt_value() {
+  local meaning example reply status
+
+  meaning=$1
+  example=$2
+  { exec 3<>/dev/tty; } 2>/dev/null || { printf '%s\n' "$example"; return 0; }
+  printf '%s [%s]: ' "$meaning" "$example" >&3
+  IFS= read -r reply <&3
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    { exec 3<&-; } 2>/dev/null || :
+    { exec 3>&-; } 2>/dev/null || :
+    return 130
+  fi
+  if [ -z "$reply" ] && _god_resolve_is_placeholder "$example"; then
+    printf 'BASH_GOD: a value is required for %s.\n' "$meaning" >&3
+    { exec 3<&-; } 2>/dev/null || :
+    { exec 3>&-; } 2>/dev/null || :
+    return 1
+  fi
+  { exec 3<&-; } 2>/dev/null || :
+  { exec 3>&-; } 2>/dev/null || :
+  printf '%s\n' "${reply:-$example}"
+}
+
+# ---------------------------------------------------------------------------
+# Orchestration
+# ---------------------------------------------------------------------------
+
+# _god_resolve_command SERVICE CATALOG GROUP ENTRY EXECUTION_PATH QUERY
+#
+# Prints:
+#   DISPLAY\t<command with every value substituted in place, for the confirm screen>
+#   TEMPLATE\t<same command with each bound value replaced by "$N", for execute.sh>
+#   VALUE\t<value>              one per bound slot, in the same order as $N
+#   PENDING\t<name>\t<span>\t<default>\t<meaning>
+#                                      one per placeholder still unresolved
+#
+# Values that came from the user (harvested from the query or an optional
+# per-service config default) are always lifted into VALUE/TEMPLATE, never
+# baked into executable shell text. Unbound catalog defaults stay literal in
+# both, since that text is maintainer-authored, the same trust level as @run.
+_god_resolve_command() {
+  local service catalog group entry execution_path query
+  local mode run display template tag discover_probes discovered_tool declared_service_tool execution_mode connection_kind connection_port target target_host target_port target_parts
+  local name example meaning span query_words placeholder documented_span covered parameter_key
+  local documented_host documented_port
+  local -a param_names param_examples param_spans param_meanings param_keyword_classes param_bound
+  local -a name_pool num_pool values
+  local pool_index bound value_count i
+
+  service=$1
+  catalog=$2
+  group=$3
+  entry=$4
+  execution_path=$5
+  query=$6
+
+  mode=''
+  run=''
+  param_names=()
+  param_examples=()
+  param_spans=()
+  param_meanings=()
+  param_keyword_classes=()
+  param_bound=()
+  while IFS="$(printf '\t')" read -r tag a b c d; do
+    case "$tag" in
+      MODE) mode=$a ;;
+      RUN) run=$a ;;
+      PARAM)
+        param_names+=("$a")
+        param_examples+=("$b")
+        param_spans+=('')
+        param_meanings+=("$c")
+        param_keyword_classes+=("$d")
+        ;;
+    esac
+  done < <(_god_catalog_command_export "$catalog" "$group" "$entry")
+  [ -n "$run" ] || return 1
+
+  execution_mode="$(_god_catalog_execution_mode "$catalog")"
+  declared_service_tool="$(_god_catalog_command_service_tool "$catalog" "$group" "$entry" 2>/dev/null)"
+  # A path has meaning only for a catalog that owns a resolved discovery
+  # directory. PATH catalogs deliberately execute their spelling through the
+  # caller's PATH. A LOCAL Schema-1 record keeps that directory only when it
+  # explicitly requires a service-scoped executable; a local host tool such
+  # as mongodump deliberately stays on PATH.
+  if [ "$execution_mode" != DISCOVER ] || \
+     { [ "$mode" = LOCAL ] && [ -z "$declared_service_tool" ]; }; then
+    execution_path=''
+  fi
+  discover_probes=''
+  discovered_tool=''
+  if [ -n "$execution_path" ] && [ "$execution_mode" = DISCOVER ]; then
+    if [ -n "$declared_service_tool" ]; then
+      # Requirements Schema 1 names the exact reviewed sibling. Do not
+      # substitute the discovery-selected family member for a different
+      # client spelling (for example mongo for mongosh).
+      discover_probes=$declared_service_tool
+      discovered_tool=$declared_service_tool
+    else
+      discover_probes="$(_god_catalog_discover_probes "$catalog")"
+      if [ -n "$(type -t _god_discover_tool 2>/dev/null)" ]; then
+        discovered_tool="$(_god_discover_tool "$service" 2>/dev/null)"
+      fi
+      [ -n "$discovered_tool" ] || discovered_tool="$(_god_catalog_discover_value "$catalog" probe)"
+    fi
+  fi
+  run="$(_god_resolve_rewrite_paths "$run" "$execution_path" "$discover_probes" "$discovered_tool")"
+  connection_kind="$(_god_catalog_connection_kind "$catalog")"
+  connection_port=''
+  target=''
+  target_host=''
+  target_port=''
+  if [ "$connection_kind" = ENDPOINT ]; then
+    connection_port="$(_god_catalog_connection_port "$catalog")"
+    if [ -n "$(type -t _god_discover_target 2>/dev/null)" ]; then
+      target="$(_god_discover_target "$service" 2>/dev/null)"
+      target_parts="$(_god_resolve_endpoint_target_parts "$target" 2>/dev/null)" || target_parts=''
+      if [ -n "$target_parts" ]; then
+        IFS="$(printf '\t')" read -r target_host target_port <<< "$target_parts"
+        run="$(_god_resolve_rewrite_endpoint "$run" "$target" "$connection_port")"
+      fi
+    fi
+  fi
+
+  # A catalog's readable command form sometimes carries --host/--port but
+  # does not repeat those obvious flags in @params. Treat that explicit form
+  # as the same generic endpoint slot so it receives the cached Target (or a
+  # clear prompt when no target was resolved). Existing catalog metadata wins
+  # and is never duplicated.
+  if [ "$connection_kind" = ENDPOINT ]; then
+    documented_host=0
+    documented_port=0
+    i=0
+    while [ "$i" -lt "${#param_names[@]}" ]; do
+      parameter_key=${param_names[$i]#--}
+      parameter_key="$(printf '%s' "$parameter_key" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+      case "$parameter_key" in
+        host|hostname) documented_host=1 ;;
+        port) documented_port=1 ;;
+      esac
+      i=$((i + 1))
+    done
+    if [ "$documented_host" = 0 ] && [[ "$run" == *'--host <host>'* ]]; then
+      param_names+=(HOST)
+      param_examples+=('<host>')
+      param_spans+=('')
+      param_meanings+=('Service hostname from the cached Target')
+      param_keyword_classes+=('host:name')
+    elif [ "$documented_host" = 0 ] && [[ "$run" == *'--hostname <hostname>'* ]]; then
+      param_names+=(HOSTNAME)
+      param_examples+=('<hostname>')
+      param_spans+=('')
+      param_meanings+=('Service hostname from the cached Target')
+      param_keyword_classes+=('host:name')
+    fi
+    if [ "$documented_port" = 0 ] && [[ "$run" == *"--port $connection_port"* ]]; then
+      param_names+=(PORT)
+      param_examples+=("$connection_port")
+      param_spans+=('')
+      param_meanings+=('Service listener port from the cached Target')
+      param_keyword_classes+=('port:num')
+    fi
+  fi
+
+  # Catalogs express a slot either as its placeholder example (the original
+  # Kafka convention: `topic | <topic_name>`) or as a placeholder name with a
+  # useful concrete default (for example: `<index_name> | orders-v1`).  Map
+  # each parameter to the literal span actually present in @run before any
+  # binding. Parameters that only document a fixed switch have no span and
+  # never create a misleading positional value or prompt.
+  i=0
+  while [ "$i" -lt "${#param_names[@]}" ]; do
+    name="${param_names[$i]}"
+    example="${param_examples[$i]}"
+    parameter_key=${name#--}
+    parameter_key="$(printf '%s' "$parameter_key" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+    span=''
+    if _god_resolve_is_placeholder "$name" && [[ "$run" == *"$name"* ]]; then
+      span=$name
+    elif [ "$parameter_key" = port ] && [[ "$run" == *"--port $example"* ]]; then
+      # A rewritten URI contains its listener port as part of the cached
+      # authority. That is not an independently editable --port slot.
+      span=$example
+    elif [[ "$run" == *"$example"* ]]; then
+      span=$example
+    fi
+    param_spans[$i]=$span
+    i=$((i + 1))
+  done
+
+  name_pool=()
+  num_pool=()
+  query_words=' '
+  while IFS="$(printf '\t')" read -r tag value; do
+    case "$tag" in
+      WORDS) query_words=" $value " ;;
+      NAME) name_pool+=("$value") ;;
+      NUM) num_pool+=("$value") ;;
+    esac
+  done < <(_god_resolve_harvest "$query")
+
+  display=$run
+  template=$run
+  values=()
+  value_count=${#param_names[@]}
+
+  # A slot only competes for a harvested token when the query actually says
+  # its keyword (so "offset -1 ... topic" binds --offset, not the unrelated
+  # --partition slot sitting right next to it). Among slots the query does
+  # name, a token binds only when exactly one eligible slot and exactly one
+  # candidate token of that class both exist; anything else is left for the
+  # placeholder pass rather than guessed.
+  local name_eligible_count=0 num_eligible_count=0 keyword_class
+
+  i=0
+  while [ "$i" -lt "$value_count" ]; do
+    keyword_class="${param_keyword_classes[$i]}"
+    if [ -n "$keyword_class" ] && _god_resolve_query_has_word "$query_words" "${keyword_class%%:*}"; then
+      case "$keyword_class" in
+        *:name) name_eligible_count=$((name_eligible_count + 1)) ;;
+        *:num) num_eligible_count=$((num_eligible_count + 1)) ;;
+      esac
+    fi
+    i=$((i + 1))
+  done
+
+  i=0
+  while [ "$i" -lt "$value_count" ]; do
+    name="${param_names[$i]}"
+    example="${param_examples[$i]}"
+    span="${param_spans[$i]}"
+    meaning="${param_meanings[$i]}"
+    bound=''
+    parameter_key=${name#--}
+    parameter_key="$(printf '%s' "$parameter_key" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+
+    # An ENDPOINT catalog's cached Target is the reviewed service-wide
+    # default. Bind only explicit host/hostname placeholders and the catalog's
+    # declared listener-port default; unrelated numbers and destinations keep
+    # their normal query/config behavior. Values remain positional parameters,
+    # so a target never becomes shell syntax.
+    if [ -n "$span" ] && [ -n "$target_host" ]; then
+      case "$parameter_key" in
+        host|hostname)
+          _god_resolve_is_placeholder "$span" && bound=$target_host
+          ;;
+        port)
+          [ "$span" = "$connection_port" ] && bound=$target_port
+          ;;
+      esac
+    fi
+    if [ -n "$span" ] && ! _god_resolve_is_placeholder "$span" && [ -z "$bound" ]; then
+      bound="$(_god_resolve_config_value "$service" "$name" "$span")"
+      [ "$bound" = "$span" ] && bound=''
+    fi
+    if [ -n "$span" ] && [ -z "$bound" ]; then
+      keyword_class="${param_keyword_classes[$i]}"
+      if [ -n "$keyword_class" ] && _god_resolve_query_has_word "$query_words" "${keyword_class%%:*}"; then
+        case "$keyword_class" in
+          *:name)
+            [ "$name_eligible_count" -eq 1 ] && [ "${#name_pool[@]}" -eq 1 ] && bound="${name_pool[0]}"
+            ;;
+          *:num)
+            [ "$num_eligible_count" -eq 1 ] && [ "${#num_pool[@]}" -eq 1 ] && bound="${num_pool[0]}"
+            ;;
+        esac
+      fi
+    fi
+
+    if [ -n "$bound" ]; then
+      values+=("$bound")
+      pool_index=${#values[@]}
+      display="$(_god_resolve_replace_span "$display" "$span" "$bound")"
+      template="$(_god_resolve_replace_template_span "$template" "$span" "$pool_index")"
+      param_bound[$i]=1
+    fi
+    i=$((i + 1))
+  done
+
+  printf 'DISPLAY\t%s\n' "$display"
+  printf 'TEMPLATE\t%s\n' "$template"
+  if [ "${#values[@]}" -gt 0 ]; then
+    for value in "${values[@]}"; do
+      printf 'VALUE\t%s\n' "$value"
+    done
+  fi
+
+  i=0
+  while [ "$i" -lt "$value_count" ]; do
+    name="${param_names[$i]}"
+    example="${param_examples[$i]}"
+    span="${param_spans[$i]}"
+    if [ -n "$span" ] && _god_resolve_is_placeholder "$span" && [ "${param_bound[$i]:-0}" != 1 ]; then
+      printf 'PENDING\t%s\t%s\t%s\t%s\n' "$name" "$span" "$example" "${param_meanings[$i]}"
+    fi
+    i=$((i + 1))
+  done
+
+  # Parameter metadata can name a flag (for example, -n) instead of repeating
+  # the <namespace> span it documents. Prompt every span no declared parameter
+  # already owns, so incomplete catalog metadata cannot leak raw placeholder
+  # syntax to bash -c. A declared span may contain a placeholder inside a
+  # larger value, such as User:<principal>.
+  while IFS= read -r placeholder; do
+    [ -n "$placeholder" ] || continue
+    covered=0
+    i=0
+    while [ "$i" -lt "$value_count" ]; do
+      documented_span="${param_spans[$i]}"
+      case "$documented_span" in
+        *"$placeholder"*) covered=1; break ;;
+      esac
+      i=$((i + 1))
+    done
+    [ "$covered" = 1 ] && continue
+    printf 'PENDING\t%s\t%s\t%s\t%s\n' \
+      "$placeholder" "$placeholder" "$placeholder" \
+      "$(_god_resolve_placeholder_meaning "$placeholder")"
+  done < <(_god_resolve_placeholder_spans "$run")
+}
+
+# _god_resolve_command_interactive SERVICE CATALOG GROUP ENTRY EXECUTION_PATH QUERY
+#
+# Runs _god_resolve_command, then prompts once per remaining PENDING
+# placeholder (skipped with no /dev/tty, leaving the placeholder literal).
+# Same DISPLAY/TEMPLATE/VALUE output shape, with no PENDING lines left when a
+# terminal was available to fill them.
+_god_resolve_command_interactive() {
+  local service catalog group entry execution_path query
+  local tag a b c d display template value_count answer pool_index resolved prompt_status
+
+  service=$1
+  catalog=$2
+  group=$3
+  entry=$4
+  execution_path=$5
+  query=$6
+
+  display=''
+  template=''
+  local -a values pending_names pending_spans pending_examples pending_meanings
+  values=()
+  pending_names=()
+  pending_spans=()
+  pending_examples=()
+  pending_meanings=()
+
+  resolved="$(_god_resolve_command "$service" "$catalog" "$group" "$entry" "$execution_path" "$query")" || return $?
+  while IFS="$(printf '\t')" read -r tag a b c d; do
+    case "$tag" in
+      DISPLAY) display=$a ;;
+      TEMPLATE) template=$a ;;
+      VALUE) values+=("$a") ;;
+      PENDING)
+        pending_names+=("$a")
+        pending_spans+=("$b")
+        pending_examples+=("$c")
+        pending_meanings+=("$d")
+        ;;
+    esac
+  done <<< "$resolved"
+
+  value_count=${#pending_names[@]}
+  i=0
+  while [ "$i" -lt "$value_count" ]; do
+    answer="$(_god_resolve_prompt_value "${pending_meanings[$i]}" "${pending_examples[$i]}")"
+    prompt_status=$?
+    [ "$prompt_status" -eq 0 ] || return "$prompt_status"
+    if [ "$answer" != "${pending_examples[$i]}" ]; then
+      values+=("$answer")
+      pool_index=${#values[@]}
+      display="$(_god_resolve_replace_span "$display" "${pending_spans[$i]}" "$answer")"
+      template="$(_god_resolve_replace_template_span "$template" "${pending_spans[$i]}" "$pool_index")"
+    fi
+    i=$((i + 1))
+  done
+
+  printf 'DISPLAY\t%s\n' "$display"
+  printf 'TEMPLATE\t%s\n' "$template"
+  if [ "${#values[@]}" -gt 0 ]; then
+    for answer in "${values[@]}"; do
+      printf 'VALUE\t%s\n' "$answer"
+    done
+  fi
+}
+
+# _god_resolve_reviewed_model SERVICE CATALOG GROUP ENTRY EXECUTION_PATH QUERY ELIGIBILITY [REASON]
+#
+# Emits the complete, versioned data contract shared by interaction and
+# execution. Command identity, environment context, eligibility, risk, display
+# text, executable template, positional values, and unresolved parameters stay
+# separate fields. No field is evaluated while crossing this boundary.
+_god_resolve_reviewed_model() {
+  local service catalog group entry execution_path query eligibility reason
+  local execution_mode connection_kind target risk tag value resolved
+
+  service=$1
+  catalog=$2
+  group=$3
+  entry=$4
+  execution_path=$5
+  query=$6
+  eligibility=${7:-runnable}
+  reason=${8:-}
+
+  risk=''
+  while IFS="$(printf '\t')" read -r tag value; do
+    [ "$tag" = RISK ] && risk=$value
+  done < <(_god_catalog_command_export "$catalog" "$group" "$entry")
+
+  execution_mode="$(_god_catalog_execution_mode "$catalog")"
+  connection_kind="$(_god_catalog_connection_kind "$catalog")"
+  target=''
+  if [ "$connection_kind" = ENDPOINT ] && [ -n "$(type -t _god_discover_target 2>/dev/null)" ]; then
+    target="$(_god_discover_target "$service" 2>/dev/null)"
+  fi
+
+  resolved="$(_god_resolve_command "$service" "$catalog" "$group" "$entry" "$execution_path" "$query")" || return $?
+
+  printf 'MODEL\t1\n'
+  printf 'IDENTITY\t%s\t%s\t%s\n' "$service" "$group" "$entry"
+  printf 'CONTEXT\t%s\t%s\n' "$execution_mode" "$connection_kind"
+  [ -z "$execution_path" ] || printf 'EXECUTION_PATH\t%s\n' "$execution_path"
+  [ -z "$target" ] || printf 'TARGET\t%s\n' "$target"
+  printf 'ELIGIBILITY\t%s\n' "$eligibility"
+  [ -z "$reason" ] || printf 'REASON\t%s\n' "$reason"
+  printf 'RISK\t%s\n' "$risk"
+  printf '%s\n' "$resolved"
+}
+
+# _god_resolve_reviewed_model_interactive SERVICE CATALOG GROUP ENTRY EXECUTION_PATH QUERY ELIGIBILITY [REASON]
+#
+# Builds the same reviewed-command contract after resolving any remaining
+# placeholder prompts. Cancellation and prompt failures propagate unchanged.
+_god_resolve_reviewed_model_interactive() {
+  local service catalog group entry execution_path query eligibility reason
+  local execution_mode connection_kind target risk tag value resolved
+
+  service=$1
+  catalog=$2
+  group=$3
+  entry=$4
+  execution_path=$5
+  query=$6
+  eligibility=${7:-runnable}
+  reason=${8:-}
+
+  risk=''
+  while IFS="$(printf '\t')" read -r tag value; do
+    [ "$tag" = RISK ] && risk=$value
+  done < <(_god_catalog_command_export "$catalog" "$group" "$entry")
+
+  execution_mode="$(_god_catalog_execution_mode "$catalog")"
+  connection_kind="$(_god_catalog_connection_kind "$catalog")"
+  target=''
+  if [ "$connection_kind" = ENDPOINT ] && [ -n "$(type -t _god_discover_target 2>/dev/null)" ]; then
+    target="$(_god_discover_target "$service" 2>/dev/null)"
+  fi
+
+  resolved="$(_god_resolve_command_interactive "$service" "$catalog" "$group" "$entry" "$execution_path" "$query")" || return $?
+
+  printf 'MODEL\t1\n'
+  printf 'IDENTITY\t%s\t%s\t%s\n' "$service" "$group" "$entry"
+  printf 'CONTEXT\t%s\t%s\n' "$execution_mode" "$connection_kind"
+  [ -z "$execution_path" ] || printf 'EXECUTION_PATH\t%s\n' "$execution_path"
+  [ -z "$target" ] || printf 'TARGET\t%s\n' "$target"
+  printf 'ELIGIBILITY\t%s\n' "$eligibility"
+  [ -z "$reason" ] || printf 'REASON\t%s\n' "$reason"
+  printf 'RISK\t%s\n' "$risk"
+  printf '%s\n' "$resolved"
+}

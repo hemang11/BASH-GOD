@@ -1,7 +1,30 @@
 #!/usr/bin/env bash
 
 # Real-file launcher installed at PREFIX/bin/god by the runtime package.
-_bash_god_bin_dir="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)" || exit 1
+# It is safe for an operator to add their own symlink elsewhere on PATH, so
+# resolve the launcher itself rather than assuming BASH_SOURCE names PREFIX.
+_bash_god_launcher="${BASH_SOURCE[0]}"
+case "$_bash_god_launcher" in
+  /*) ;;
+  *) _bash_god_launcher="$PWD/$_bash_god_launcher" ;;
+esac
+_bash_god_link_hops=0
+while [ -L "$_bash_god_launcher" ]; do
+  _bash_god_link_hops=$((_bash_god_link_hops + 1))
+  [ "$_bash_god_link_hops" -le 40 ] || {
+    printf 'BASH_GOD: launcher symlink chain is too deep.\n' >&2
+    exit 1
+  }
+  _bash_god_link_target="$(readlink "$_bash_god_launcher")" || {
+    printf 'BASH_GOD: cannot read launcher symlink: %s\n' "$_bash_god_launcher" >&2
+    exit 1
+  }
+  case "$_bash_god_link_target" in
+    /*) _bash_god_launcher=$_bash_god_link_target ;;
+    *) _bash_god_launcher="$(dirname "$_bash_god_launcher")/$_bash_god_link_target" ;;
+  esac
+done
+_bash_god_bin_dir="$(CDPATH= cd "$(dirname "$_bash_god_launcher")" 2>/dev/null && pwd -P)" || exit 1
 _bash_god_prefix="$(CDPATH= cd "$_bash_god_bin_dir/.." 2>/dev/null && pwd -P)" || exit 1
 _bash_god_runtime="$_bash_god_prefix/lib/bash-god/god"
 
